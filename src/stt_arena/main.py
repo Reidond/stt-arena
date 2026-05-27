@@ -10,6 +10,8 @@ from pydantic import BaseModel
 
 from stt_arena.audio import AudioValidationError, prepare_audio
 from stt_arena.config import Settings, get_settings
+from stt_arena.cost import billing_summary, estimate_transcription_cost
+from stt_arena.languages import list_language_options, resolve_canonical_language
 from stt_arena.providers import available_providers, list_provider_statuses
 from stt_arena.sessions import TranscriptionSession, create_session, take_session
 from stt_arena.transcribe import (
@@ -59,12 +61,25 @@ def _render_partial(name: str, **context: object) -> str:
 def _enrich_result(
     result: dict[str, object],
     display_names: dict[str, str],
+    *,
+    settings: Settings,
+    duration_sec: float | None = None,
 ) -> dict[str, object]:
     provider_id = str(result["provider_id"])
-    return {
+    enriched: dict[str, object] = {
         **result,
         "display_name": display_names.get(provider_id, provider_id),
     }
+    if duration_sec is not None and result.get("status") == "ok":
+        cost = estimate_transcription_cost(
+            provider_id,
+            duration_sec,
+            settings=settings,
+        )
+        if cost is not None:
+            enriched["cost"] = cost.model_dump()
+            enriched["estimated_cost_usd"] = cost.usd
+    return enriched
 
 
 async def _prepare_upload(
@@ -105,14 +120,25 @@ async def index(request: Request):
         {
             "settings": settings,
             "vite_tags": vite_tags(settings),
+            "languages": list_language_options(),
         },
     )
+
+
+@app.get("/api/languages")
+async def list_languages():
+    return {"languages": list_language_options()}
 
 
 @app.get("/api/providers")
 async def list_providers(request: Request):
     settings = get_settings()
-    providers = [item.model_dump() for item in list_provider_statuses(settings)]
+    providers = []
+    for item in list_provider_statuses(settings):
+        payload = item.model_dump()
+        if item.enabled:
+            payload["billing"] = billing_summary(item.id, settings)
+        providers.append(payload)
 
     if _wants_html(request):
         return TEMPLATES.TemplateResponse(
@@ -124,6 +150,31 @@ async def list_providers(request: Request):
     return {"providers": providers}
 
 
+@app.get("/api/billing/plans")
+async def list_billing_plans():
+    from stt_arena.cost import BILLING_PLANS
+
+    settings = get_settings()
+    plans = []
+    for plan in BILLING_PLANS.values():
+        plans.append(
+            {
+                "id": plan.id,
+                "provider_id": plan.provider_id,
+                "label": plan.label,
+                "model": plan.model,
+                "billing_mode": plan.billing_mode,
+                "usd_per_minute": plan.usd_per_minute,
+                "free_minutes_monthly": plan.free_minutes_monthly,
+                "pricing_url": plan.pricing_url,
+                "notes": plan.notes,
+                "active_for_provider": settings.billing_plan_for(plan.provider_id)
+                == plan.id,
+            }
+        )
+    return {"plans": plans}
+
+
 @app.post("/api/transcribe")
 async def transcribe(
     request: Request,
@@ -131,6 +182,11 @@ async def transcribe(
     language: str | None = Form(default=None),
 ):
     settings = get_settings()
+    try:
+        canonical_language = resolve_canonical_language(language)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     prepared = await _prepare_upload(
         file,
         max_upload_mb=settings.max_upload_mb,
@@ -149,7 +205,7 @@ async def transcribe(
             TranscriptionSession(
                 wav_bytes=prepared.wav_bytes,
                 mime_type=prepared.mime_type,
-                language=language or None,
+                language=canonical_language,
                 duration_sec=prepared.duration_sec,
                 provider_ids=tuple(provider.id for provider in providers),
             )
@@ -174,7 +230,7 @@ async def transcribe(
             settings,
             prepared.wav_bytes,
             mime_type=prepared.mime_type,
-            language=language or None,
+            language=canonical_language,
             duration_sec=prepared.duration_sec,
         )
     except NoProvidersError as exc:
@@ -188,7 +244,13 @@ async def transcribe(
     if _wants_html(request):
         display_names = _display_names(settings)
         enriched = [
-            _enrich_result(result, display_names) for result in payload.results
+            _enrich_result(
+                result,
+                display_names,
+                settings=settings,
+                duration_sec=prepared.duration_sec,
+            )
+            for result in payload.results
         ]
         return TEMPLATES.TemplateResponse(
             request,
@@ -220,17 +282,30 @@ async def transcribe_events(session_id: str) -> StreamingResponse:
                 language=session.language,
                 duration_sec=session.duration_sec,
             ):
-                enriched = _enrich_result(result.model_dump(), display_names)
+                enriched = _enrich_result(
+                    result.model_dump(),
+                    display_names,
+                    settings=settings,
+                    duration_sec=session.duration_sec,
+                )
                 html = _render_partial("partials/result_card.html", result=enriched)
                 payload = json.dumps(
-                    {"provider_id": result.provider_id, "html": html},
+                    {
+                        "provider_id": result.provider_id,
+                        "html": html,
+                        "result": enriched,
+                    },
                     ensure_ascii=False,
                 )
                 yield f"event: result\ndata: {payload}\n\n"
         except Exception as exc:
             payload = json.dumps({"message": str(exc)}, ensure_ascii=False)
             yield f"event: error\ndata: {payload}\n\n"
-        yield "event: done\ndata: {}\n\n"
+        done_payload = json.dumps(
+            {"audio_duration_sec": round(session.duration_sec, 1)},
+            ensure_ascii=False,
+        )
+        yield f"event: done\ndata: {done_payload}\n\n"
 
     return StreamingResponse(
         event_stream(),
