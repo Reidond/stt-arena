@@ -4,6 +4,10 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>stt-arena</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23059669'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' fill='white' font-family='system-ui'%3EA%3C/text%3E%3C/svg%3E"
+    />
     {% for tag in vite_tags %}
       {% if tag.tag == "link" %}
     <link{% for key, value in tag.attrs.items() %} {{ key }}="{{ value }}"{% endfor %} />
@@ -37,29 +41,38 @@
       </section>
 
       <section class="rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/40 p-8">
-        <form
-          hx-post="/api/transcribe"
-          hx-encoding="multipart/form-data"
-          hx-target="#results"
-          hx-swap="innerHTML"
-          class="space-y-4"
-        >
+        <form id="transcribe-form" class="space-y-4">
           <label class="block">
             <span class="mb-2 block text-sm font-medium text-zinc-300">Audio file</span>
             <input
               type="file"
               name="file"
               accept="audio/*,.wav,.mp3,.webm,.ogg,.m4a"
-              class="block w-full cursor-pointer rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-emerald-500"
+              class="block w-full cursor-pointer rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
               required
             />
           </label>
-          <button
-            type="submit"
-            class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500"
-          >
-            Transcribe
-          </button>
+          <label class="block">
+            <span class="mb-2 block text-sm font-medium text-zinc-300">Language (optional)</span>
+            <input
+              type="text"
+              name="language"
+              placeholder="en"
+              class="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </label>
+          <div class="flex items-center gap-3">
+            <button
+              id="transcribe-submit"
+              type="submit"
+              class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Transcribe
+            </button>
+            <p id="transcribe-indicator" class="text-sm text-zinc-400">
+              Transcribing…
+            </p>
+          </div>
         </form>
       </section>
 
