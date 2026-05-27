@@ -41,7 +41,7 @@ class DeepgramProvider(STTProvider):
             client = AsyncDeepgramClient(api_key=self._settings.deepgram_api_key)
             response = await client.listen.v1.media.transcribe_file(
                 request=audio,
-                model="nova-2",
+                model=self._settings.deepgram_model,
                 language=language,
                 smart_format=True,
                 punctuate=True,

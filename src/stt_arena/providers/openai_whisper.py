@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 class OpenAIWhisperProvider(STTProvider):
     id = "openai_whisper"
-    display_name = "OpenAI Whisper"
+    display_name = "OpenAI GPT-4o Transcribe"
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -39,7 +39,9 @@ class OpenAIWhisperProvider(STTProvider):
 
         try:
             base_url = self._settings.openai_base_url.rstrip("/")
-            data: dict[str, str] = {"model": "whisper-1"}
+            data: dict[str, str] = {
+                "model": self._settings.openai_transcribe_model,
+            }
             if language:
                 data["language"] = language
 
