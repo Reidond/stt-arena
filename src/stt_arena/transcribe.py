@@ -5,6 +5,8 @@ import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
+from stt_arena.languages import language_for_provider
+from stt_arena.provider_timeouts import provider_timeout_sec as resolve_provider_timeout
 from stt_arena.providers.base import STTProvider, TranscriptionResult
 
 if TYPE_CHECKING:
@@ -25,15 +27,17 @@ async def _run_provider(
     duration_sec: float | None,
 ) -> TranscriptionResult:
     started = time.perf_counter()
+    provider_language = language_for_provider(provider.id, language)
+    timeout_sec = resolve_provider_timeout(settings, provider.id, duration_sec)
     try:
         return await asyncio.wait_for(
             provider.transcribe(
                 audio,
                 mime_type=mime_type,
-                language=language,
+                language=provider_language,
                 duration_sec=duration_sec,
             ),
-            timeout=settings.provider_timeout_sec,
+            timeout=timeout_sec,
         )
     except TimeoutError:
         latency_ms = int((time.perf_counter() - started) * 1000)
@@ -41,7 +45,7 @@ async def _run_provider(
             provider_id=provider.id,
             status="error",
             latency_ms=latency_ms,
-            error=f"Timed out after {settings.provider_timeout_sec}s",
+            error=f"Timed out after {int(timeout_sec)}s",
         )
     except Exception as exc:
         latency_ms = int((time.perf_counter() - started) * 1000)

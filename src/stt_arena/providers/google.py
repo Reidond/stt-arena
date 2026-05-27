@@ -1,30 +1,33 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import time
 import uuid
-import wave
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from google.api_core.client_options import ClientOptions
 from google.cloud import storage
-from google.cloud.speech_v1 import SpeechClient
-from google.cloud.speech_v1.types import cloud_speech
+from google.cloud.speech_v2 import SpeechClient
+from google.cloud.speech_v2.types import cloud_speech
 
+from stt_arena.audio import wav_duration_sec
+from stt_arena.provider_timeouts import (
+    GOOGLE_SYNC_MAX_DURATION_SEC,
+    google_batch_operation_timeout_sec,
+)
 from stt_arena.providers.base import STTProvider, TranscriptionResult, word_count
 
 if TYPE_CHECKING:
     from stt_arena.config import Settings
 
-# Google inline audio is limited to ~60s even for long-running requests.
-SYNC_MAX_DURATION_SEC = 55.0
+SYNC_MAX_DURATION_SEC = GOOGLE_SYNC_MAX_DURATION_SEC
 
 
 class GoogleProvider(STTProvider):
     id = "google"
-    display_name = "Google Cloud STT"
+    display_name = "Google Cloud STT (Chirp 3)"
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -52,14 +55,14 @@ class GoogleProvider(STTProvider):
         started = time.perf_counter()
 
         try:
-            language_code = _to_google_language(language)
-            if duration_sec is not None:
+            language_codes = [language] if language else ["auto"]
+            # Route on the normalized WAV we upload, not container metadata.
+            audio_duration = wav_duration_sec(audio)
+            if audio_duration <= 0 and duration_sec is not None:
                 audio_duration = duration_sec
-            else:
-                audio_duration = _wav_duration_sec(audio)
 
-            needs_gcs = audio_duration > SYNC_MAX_DURATION_SEC
-            if needs_gcs and not self._settings.google_storage_bucket:
+            needs_batch = audio_duration > SYNC_MAX_DURATION_SEC
+            if needs_batch and not self._settings.google_storage_bucket:
                 msg = (
                     "Google Cloud STT requires GOOGLE_STORAGE_BUCKET for audio "
                     f"longer than {int(SYNC_MAX_DURATION_SEC)}s"
@@ -68,38 +71,58 @@ class GoogleProvider(STTProvider):
 
             def _run() -> tuple[str, float | None]:
                 client = _speech_client(self._settings)
+                project_id = _project_id(self._settings)
+                region = self._settings.google_speech_region
+                recognizer = (
+                    f"projects/{project_id}/locations/{region}/recognizers/_"
+                )
                 config = cloud_speech.RecognitionConfig(
-                    encoding=cloud_speech.RecognitionConfig.AudioEncoding.LINEAR16,
-                    sample_rate_hertz=16000,
-                    language_code=language_code,
-                    enable_automatic_punctuation=True,
+                    auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
+                    language_codes=language_codes,
+                    model=self._settings.google_speech_model,
                 )
                 api_timeout = float(self._settings.provider_timeout_sec)
+                batch_timeout = google_batch_operation_timeout_sec(
+                    self._settings,
+                    audio_duration,
+                )
                 gcs_uri: str | None = None
 
                 try:
-                    if audio_duration > SYNC_MAX_DURATION_SEC:
+                    if needs_batch:
                         gcs_uri = _upload_audio_to_gcs(self._settings, audio)
-                        audio_obj = cloud_speech.RecognitionAudio(uri=gcs_uri)
-                        operation = client.long_running_recognize(
-                            config=config,
-                            audio=audio_obj,
-                            timeout=30.0,
+                        file_metadata = cloud_speech.BatchRecognizeFileMetadata(
+                            uri=gcs_uri,
                         )
-                        response = operation.result(timeout=api_timeout)
-                    else:
-                        audio_obj = cloud_speech.RecognitionAudio(content=audio)
-                        response = client.recognize(
+                        request = cloud_speech.BatchRecognizeRequest(
+                            recognizer=recognizer,
                             config=config,
-                            audio=audio_obj,
-                            timeout=min(60.0, api_timeout),
+                            files=[file_metadata],
+                            recognition_output_config=cloud_speech.RecognitionOutputConfig(
+                                inline_response_config=cloud_speech.InlineOutputConfig(),
+                            ),
                         )
-                    return _parse_response(response)
+                        operation = client.batch_recognize(request=request)
+                        response = operation.result(timeout=batch_timeout)
+                        return _parse_batch_response(response, gcs_uri)
+                    request = cloud_speech.RecognizeRequest(
+                        recognizer=recognizer,
+                        config=config,
+                        content=audio,
+                    )
+                    response = client.recognize(
+                        request=request,
+                        timeout=min(60.0, api_timeout),
+                    )
+                    return _parse_recognize_response(response)
                 finally:
                     if gcs_uri is not None:
                         _delete_gcs_blob(self._settings, gcs_uri)
 
             text, confidence = await asyncio.to_thread(_run)
+            if not text:
+                msg = "Google returned an empty transcript"
+                raise RuntimeError(msg)
             latency_ms = int((time.perf_counter() - started) * 1000)
             return TranscriptionResult(
                 provider_id=self.id,
@@ -135,13 +158,30 @@ def _credentials_path(settings: Settings) -> Path | None:
     return path
 
 
+def _project_id(settings: Settings) -> str:
+    cred_path = _credentials_path(settings)
+    if cred_path is None:
+        msg = "Valid Google service account JSON not configured"
+        raise RuntimeError(msg)
+    payload = json.loads(cred_path.read_text(encoding="utf-8"))
+    project_id = payload.get("project_id")
+    if not isinstance(project_id, str) or not project_id:
+        msg = "Google service account JSON is missing project_id"
+        raise RuntimeError(msg)
+    return project_id
+
+
 def _speech_client(settings: Settings) -> SpeechClient:
     cred_path = _credentials_path(settings)
     if cred_path is None:
         msg = "Valid Google service account JSON not configured"
         raise RuntimeError(msg)
 
-    return SpeechClient.from_service_account_file(str(cred_path))
+    region = settings.google_speech_region
+    return SpeechClient.from_service_account_file(
+        str(cred_path),
+        client_options=ClientOptions(api_endpoint=f"{region}-speech.googleapis.com"),
+    )
 
 
 def _storage_client(settings: Settings) -> storage.Client:
@@ -179,41 +219,75 @@ def _delete_gcs_blob(settings: Settings, uri: str) -> None:
         client = _storage_client(settings)
         client.bucket(bucket_name).blob(blob_name).delete()
     except Exception:
-        # Best-effort cleanup; transcription already finished or failed.
         return
 
 
-def _parse_response(
-    response: cloud_speech.RecognizeResponse
-    | cloud_speech.LongRunningRecognizeResponse,
+def _parse_recognize_response(
+    response: cloud_speech.RecognizeResponse | cloud_speech.BatchRecognizeResults,
 ) -> tuple[str, float | None]:
     parts: list[str] = []
-    confidences: list[float] = []
     for result in response.results:
         if not result.alternatives:
             continue
         alt = result.alternatives[0]
         if alt.transcript:
             parts.append(alt.transcript)
-        confidences.append(alt.confidence)
 
     text = " ".join(parts).strip()
-    confidence = sum(confidences) / len(confidences) if confidences else None
-    return text, confidence
+    # Chirp 3 always returns confidence=0.0; Google docs say it is not meaningful.
+    return text, None
 
 
-def _wav_duration_sec(audio: bytes) -> float:
-    with wave.open(io.BytesIO(audio), "rb") as wav_file:
-        frames = wav_file.getnframes()
-        rate = wav_file.getframerate()
-        if rate <= 0:
-            return 0.0
-        return frames / rate
+def _batch_file_error_message(
+    file_result: cloud_speech.BatchRecognizeFileResult,
+) -> str | None:
+    error = file_result.error
+    if error is None:
+        return None
+    code = getattr(error, "code", 0)
+    if not code:
+        return None
+    message = getattr(error, "message", "") or f"Google batch error code {code}"
+    return message.strip()
 
 
-def _to_google_language(language: str | None) -> str:
-    if not language:
-        return "en-US"
-    if "-" in language:
-        return language
-    return f"{language}-US"
+def _batch_transcript_results(
+    file_result: cloud_speech.BatchRecognizeFileResult,
+) -> cloud_speech.BatchRecognizeResults | None:
+    inline = file_result.inline_result
+    if inline is not None and inline.transcript is not None:
+        return inline.transcript
+    if file_result.transcript is not None:
+        return file_result.transcript
+    return None
+
+
+def _lookup_batch_file_result(
+    response: cloud_speech.BatchRecognizeResponse,
+    audio_uri: str,
+) -> cloud_speech.BatchRecognizeFileResult:
+    file_result = response.results.get(audio_uri)
+    if file_result is not None:
+        return file_result
+    if len(response.results) == 1:
+        return next(iter(response.results.values()))
+    keys = ", ".join(response.results)
+    msg = f"Google batch response missing result for {audio_uri} (got: {keys})"
+    raise RuntimeError(msg)
+
+
+def _parse_batch_response(
+    response: cloud_speech.BatchRecognizeResponse,
+    audio_uri: str,
+) -> tuple[str, float | None]:
+    file_result = _lookup_batch_file_result(response, audio_uri)
+    error_message = _batch_file_error_message(file_result)
+    if error_message:
+        raise RuntimeError(error_message)
+
+    transcript = _batch_transcript_results(file_result)
+    if transcript is None:
+        msg = "Google batch returned no transcript payload"
+        raise RuntimeError(msg)
+
+    return _parse_recognize_response(transcript)

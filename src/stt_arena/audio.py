@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import shutil
 import subprocess
 import tempfile
+import wave
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -79,7 +81,8 @@ def prepare_audio(
         raise AudioValidationError(msg)
 
     mime_type = validate_mime_type(content_type, filename)
-    duration_sec = probe_duration(data, filename=filename)
+    wav_bytes = normalize_to_wav(data, filename=filename)
+    duration_sec = wav_duration_sec(wav_bytes)
     if duration_sec > max_duration_sec:
         msg = (
             f"Audio duration {duration_sec:.1f}s exceeds "
@@ -87,12 +90,20 @@ def prepare_audio(
         )
         raise AudioValidationError(msg)
 
-    wav_bytes = normalize_to_wav(data, filename=filename)
     return PreparedAudio(
         wav_bytes=wav_bytes,
         duration_sec=duration_sec,
         mime_type=mime_type,
     )
+
+
+def wav_duration_sec(data: bytes) -> float:
+    with wave.open(io.BytesIO(data), "rb") as wav_file:
+        frames = wav_file.getnframes()
+        rate = wav_file.getframerate()
+        if rate <= 0:
+            return 0.0
+        return frames / rate
 
 
 def probe_duration(data: bytes, *, filename: str | None) -> float:
