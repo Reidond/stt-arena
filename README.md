@@ -1,6 +1,13 @@
 # stt-arena
 
-Compare Speech-to-Text providers side by side. Upload audio once, transcribe in parallel, and review transcripts, latency, confidence, and rough cost estimates in a masonry grid.
+Compare Speech-to-Text providers side by side. Upload audio once, transcribe in parallel, and review transcripts, latency, confidence, and rough cost estimates in card, table, and compare views.
+
+<p align="center">
+  <video src="docs/preview.mp4" controls playsinline width="100%">
+    Your browser does not support embedded video.
+    <a href="docs/preview.mp4">Download the demo preview</a>.
+  </video>
+</p>
 
 ## Requirements
 
