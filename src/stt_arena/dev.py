@@ -66,6 +66,8 @@ def main() -> None:
     print()
     print("  stt-arena dev")
     print(f"  → http://{settings.host}:{settings.port}")
+    if settings.host in {"127.0.0.1", "0.0.0.0"}:
+        print(f"  → http://localhost:{settings.port}")
     print()
     print("  Press Ctrl+C to stop")
     print()

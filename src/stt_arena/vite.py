@@ -8,7 +8,7 @@ from typing import Any
 from stt_arena.assets_util import MANIFEST_PATH
 from stt_arena.config import Settings
 
-ENTRY_KEY = "src/main.ts"
+ENTRY_KEY = "src/main.tsx"
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +22,7 @@ def vite_tags(settings: Settings) -> list[HtmlTag]:
         origin = settings.vite_origin
         return [
             HtmlTag("script", {"type": "module", "src": f"{origin}/@vite/client"}),
-            HtmlTag("script", {"type": "module", "src": f"{origin}/src/main.ts"}),
+            HtmlTag("script", {"type": "module", "src": f"{origin}/src/main.tsx"}),
         ]
 
     manifest = _load_manifest()

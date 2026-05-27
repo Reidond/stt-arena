@@ -20,6 +20,7 @@ from stt_arena.transcribe import (
     transcribe_as_completed,
 )
 from stt_arena.vite import vite_tags
+from stt_arena.vite_proxy import register_vite_dev_proxy
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
@@ -41,6 +42,15 @@ class TranscribeResponse(BaseModel):
 
 def _wants_html(request: Request) -> bool:
     return request.headers.get("HX-Request") == "true"
+
+
+def _wants_json(request: Request) -> bool:
+    accept = request.headers.get("Accept", "")
+    if "application/json" in accept:
+        return True
+    if "text/html" in accept:
+        return False
+    return True
 
 
 def _wants_progressive(request: Request) -> bool:
@@ -118,9 +128,9 @@ async def index(request: Request):
         request,
         "index.html",
         {
-            "settings": settings,
             "vite_tags": vite_tags(settings),
-            "languages": list_language_options(),
+            "is_dev": settings.is_dev,
+            "vite_origin": settings.vite_origin,
         },
     )
 
@@ -215,11 +225,18 @@ async def transcribe(
             {"id": provider.id, "display_name": display_names[provider.id]}
             for provider in providers
         ]
+        progressive_payload = {
+            "session_id": session_id,
+            "audio_duration_sec": round(prepared.duration_sec, 1),
+            "providers": pending_providers,
+        }
+        if _wants_json(request):
+            return JSONResponse(content=progressive_payload)
         return TEMPLATES.TemplateResponse(
             request,
             "partials/results_pending.html",
             {
-                "audio_duration_sec": round(prepared.duration_sec, 1),
+                "audio_duration_sec": progressive_payload["audio_duration_sec"],
                 "providers": pending_providers,
                 "session_id": session_id,
             },
@@ -288,11 +305,9 @@ async def transcribe_events(session_id: str) -> StreamingResponse:
                     settings=settings,
                     duration_sec=session.duration_sec,
                 )
-                html = _render_partial("partials/result_card.html", result=enriched)
                 payload = json.dumps(
                     {
                         "provider_id": result.provider_id,
-                        "html": html,
                         "result": enriched,
                     },
                     ensure_ascii=False,
@@ -316,3 +331,6 @@ async def transcribe_events(session_id: str) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+register_vite_dev_proxy(app)
