@@ -3,11 +3,15 @@
 Compare Speech-to-Text providers side by side. Upload audio once, transcribe in parallel, and review transcripts, latency, confidence, and rough cost estimates in card, table, and compare views.
 
 <p align="center">
-  <video src="docs/preview.mp4" controls playsinline width="100%">
-    Your browser does not support embedded video.
-    <a href="docs/preview.mp4">Download the demo preview</a>.
-  </video>
+  <a href="https://github.com/Reidond/stt-arena/raw/main/docs/preview.mp4">
+    <img
+      src="docs/preview.gif"
+      alt="STT Arena demo: upload audio, transcribe in parallel, and compare provider results"
+      width="100%"
+    />
+  </a>
 </p>
+<p align="center"><sub>Preview (12s) · <a href="https://github.com/Reidond/stt-arena/raw/main/docs/preview.mp4">Watch full demo (MP4)</a></sub></p>
 
 ## Requirements
 
