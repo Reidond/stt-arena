@@ -40,14 +40,14 @@ def test_list_providers_json(client: TestClient) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert "providers" in payload
-    assert any(item["id"] == "whisper_local" for item in payload["providers"])
+    assert any(item["id"] == "openai_whisper" for item in payload["providers"])
 
 
 def test_list_providers_html_for_htmx(client: TestClient) -> None:
     response = client.get("/api/providers", headers={"HX-Request": "true"})
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "whisper_local" in response.text
+    assert "openai_whisper" in response.text
 
 
 def test_transcribe_missing_file(client: TestClient) -> None:
@@ -62,7 +62,7 @@ def test_transcribe_returns_results(
 ) -> None:
     mock_transcribe.return_value = [
         TranscriptionResult(
-            provider_id="whisper_local",
+            provider_id="openai_whisper",
             status="ok",
             text="hello world",
             latency_ms=100,
@@ -87,7 +87,7 @@ def test_transcribe_progressive_returns_loading_cards(
 ) -> None:
     async def fake_stream(*_args, **_kwargs):
         yield TranscriptionResult(
-            provider_id="whisper_local",
+            provider_id="openai_whisper",
             status="ok",
             text="hello world",
             latency_ms=100,

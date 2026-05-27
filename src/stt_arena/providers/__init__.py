@@ -7,13 +7,11 @@ from stt_arena.providers.base import ProviderStatus, STTProvider
 from stt_arena.providers.deepgram import DeepgramProvider
 from stt_arena.providers.google import GoogleProvider
 from stt_arena.providers.openai_whisper import OpenAIWhisperProvider
-from stt_arena.providers.whisper_local import WhisperLocalProvider
 from stt_arena.providers.xai_grok import XAIGrokProvider
 
 ProviderFactory = Callable[[Settings], STTProvider]
 
 PROVIDER_CLASSES: dict[str, ProviderFactory] = {
-    WhisperLocalProvider.id: WhisperLocalProvider,
     DeepgramProvider.id: DeepgramProvider,
     GoogleProvider.id: GoogleProvider,
     OpenAIWhisperProvider.id: OpenAIWhisperProvider,

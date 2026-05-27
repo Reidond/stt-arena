@@ -2,11 +2,11 @@ from stt_arena.config import Settings
 
 
 def test_enabled_provider_ids_parses_csv() -> None:
-    settings = Settings(enabled_providers="whisper_local, deepgram ,openai_whisper")
+    settings = Settings(enabled_providers="deepgram, openai_whisper, google")
     assert settings.enabled_provider_ids == [
-        "whisper_local",
         "deepgram",
         "openai_whisper",
+        "google",
     ]
 
 

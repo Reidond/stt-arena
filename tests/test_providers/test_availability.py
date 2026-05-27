@@ -4,13 +4,7 @@ from stt_arena.config import Settings
 from stt_arena.providers.deepgram import DeepgramProvider
 from stt_arena.providers.google import GoogleProvider
 from stt_arena.providers.openai_whisper import OpenAIWhisperProvider
-from stt_arena.providers.whisper_local import WhisperLocalProvider
 from stt_arena.providers.xai_grok import XAIGrokProvider
-
-
-def test_whisper_local_is_available_without_keys() -> None:
-    provider = WhisperLocalProvider(Settings())
-    assert provider.is_available() is True
 
 
 def test_deepgram_requires_api_key() -> None:
