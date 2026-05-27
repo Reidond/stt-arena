@@ -8,3 +8,12 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Assets toolchain
+assets/node_modules/
+
+# Vite build output
+src/stt_arena/static/dist/
+
+# Environment
+.env
