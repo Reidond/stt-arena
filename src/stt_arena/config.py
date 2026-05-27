@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     vite_host: str = "127.0.0.1"
     vite_port: int = 5173
 
-    enabled_providers: str = "whisper_local"
+    enabled_providers: str = "openai_whisper"
     max_upload_mb: int = 25
     max_audio_duration_sec: int = 300
     provider_timeout_sec: int = 120
@@ -28,6 +28,7 @@ class Settings(BaseSettings):
 
     deepgram_api_key: str | None = None
     google_application_credentials: str | None = None
+    google_storage_bucket: str | None = None
     openai_api_key: str | None = None
     openai_base_url: str = "https://api.openai.com/v1"
     xai_api_key: str | None = None
