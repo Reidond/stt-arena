@@ -39,6 +39,25 @@
       <dd class="text-zinc-300">{{ "%.0f"|format(result.confidence * 100) }}%</dd>
     </div>
     {% endif %}
+    {% if result.cost %}
+    <div>
+      <dt class="uppercase tracking-wide">Cost</dt>
+      <dd class="text-zinc-300">${{ "%.4f"|format(result.cost.usd) }}</dd>
+    </div>
+    <div>
+      <dt class="uppercase tracking-wide">Plan</dt>
+      <dd class="text-zinc-300">{{ result.cost.plan_label }}</dd>
+    </div>
+    <div>
+      <dt class="uppercase tracking-wide">Billable</dt>
+      <dd class="text-zinc-300">{{ result.cost.billable_duration_sec }}s</dd>
+    </div>
+    {% elif result.estimated_cost_usd is not none %}
+    <div>
+      <dt class="uppercase tracking-wide">Cost</dt>
+      <dd class="text-zinc-300">${{ "%.4f"|format(result.estimated_cost_usd) }}</dd>
+    </div>
+    {% endif %}
   </dl>
   {% else %}
   <p class="text-sm text-red-300">{{ result.error or "Transcription failed" }}</p>
