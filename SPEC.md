@@ -1,6 +1,6 @@
 # stt-arena
 
-**Status:** Draft  
+**Status:** MVP implemented  
 **Version:** 0.1  
 **Last updated:** 2026-05-27
 
@@ -16,21 +16,21 @@
 
 ### In scope (v1)
 
-- File upload (drag-and-drop + file picker)
+- File upload (drag-and-drop, file picker, and microphone recording)
+- Batch upload (multiple files processed sequentially)
 - Parallel transcription across enabled providers
-- Masonry result cards (provider name, text, latency, word count, optional confidence)
+- Masonry result cards (provider name, text, latency, word count, optional confidence, billing plan cost)
+- Waveform preview for selected audio
+- Export results to CSV/JSON
 - Provider status page section (available / unavailable / error)
 - Graceful per-provider failure (others still complete)
 - `.env`-driven provider enablement and API keys
 
 ### Out of scope (v1)
 
-- Live browser microphone recording
 - User accounts and transcription history
-- Batch processing (multiple files)
-- Audio waveform visualization
-- Export to CSV/JSON
-- Per-transcription cost tracking and billing dashboards
+- Per-transcription cost tracking using provider-specific billing plans (official rates, rounding, free tiers)
+- CI test automation
 
 ---
 
@@ -44,12 +44,13 @@
 
 ## User flow
 
-1. User opens `GET /` → page loads provider status (via embedded data or `GET /api/providers`).
-2. User selects or drops an audio file.
-3. Client `POST`s multipart form to `/api/transcribe`.
-4. Server reads audio into memory, normalizes once, fans out to enabled providers in parallel.
-5. Server returns aggregated JSON; HTMX swaps in result cards in the masonry grid.
-6. Each card shows success fields or an error message for that provider.
+1. User opens `GET /` → provider status loads via HTMX (`GET /api/providers`).
+2. User drops, selects, or records an audio file (multiple files supported).
+3. Client `POST`s multipart form to `/api/transcribe` with `X-Progressive: 1`.
+4. Server validates audio, normalizes once, returns loading skeleton cards.
+5. Client opens SSE (`GET /api/transcribe/sessions/{id}/events`); providers run in parallel.
+6. Each completed provider swaps its card in the masonry grid (fastest first).
+7. User exports combined results as CSV or JSON.
 
 ---
 
@@ -58,22 +59,27 @@
 ### Audio input (v1)
 
 - Upload pre-recorded audio files: WAV, MP3, WebM, OGG, M4A
+- Drag-and-drop, file picker, or browser microphone recording
+- Multiple files per run (processed sequentially)
+- Waveform preview for the selected clip
 - Max file size: 25 MB; max duration: 5 minutes (validated server-side)
 
 ### Audio input (future)
 
-- Live recording via browser microphone
+- Live streaming transcription (not just record-then-upload)
 
 ### Multi-provider comparison
 
-- Run transcription on all enabled providers in parallel (`asyncio.gather(..., return_exceptions=True)`)
-- Display results in responsive masonry layout
-- Card fields: provider name, transcription text, latency (ms), word count, confidence (when supported)
+- Run transcription on all enabled providers in parallel (`asyncio.gather` / `asyncio.as_completed`)
+- Display results in responsive masonry layout; cards stream in via SSE as each provider finishes
+- Card fields: provider name, transcription text, latency (ms or seconds when ≥ 1s), word count, confidence (when supported), cost (plan label, billable duration, USD)
+- Export all results as CSV or JSON after a run completes
 - Failed providers render an error card; successful providers are unaffected
+- Upload form locked while a transcription is in progress
 
 ### Local-first
 
-- Local faster-whisper enabled by default (no API key)
+- Default enabled provider is `openai_whisper` (cloud)
 - Cloud providers are opt-in via `ENABLED_PROVIDERS` and credentials
 
 ### Configuration
@@ -92,16 +98,15 @@
 
 | Provider ID       | Display name      | Type  | API key | Confidence | Streaming | Cost (v1) |
 |-------------------|-------------------|-------|---------|------------|-----------|-----------|
-| `whisper_local`   | faster-whisper    | Local | No      | Segment    | No        | N/A ($0)  |
 | `deepgram`        | Deepgram          | Cloud | Yes     | Yes        | Yes*      | Deferred  |
 | `google`          | Google Cloud STT  | Cloud | Yes†    | Yes        | Yes*      | Deferred  |
-| `openai_whisper`  | OpenAI Whisper    | Cloud | Yes     | No         | No        | Deferred  |
+| `openai_whisper`  | OpenAI GPT-4o Transcribe | Cloud | Yes | No    | No        | Deferred  |
 | `xai_grok`        | xAI Grok          | Cloud | Yes     | No         | No        | Deferred  |
 
 \* Streaming supported by provider SDK but not used in v1 (batch upload only).  
 † Google uses a service account JSON path, not a simple API key.
 
-**OpenAI vs xAI:** `openai_whisper` calls the OpenAI `/v1/audio/transcriptions` API. `xai_grok` uses the same client shape with `XAI_API_KEY` and `XAI_BASE_URL` (OpenAI-compatible endpoint). They are separate provider IDs so results can be compared side-by-side.
+**OpenAI vs xAI:** `openai_whisper` calls the OpenAI `/v1/audio/transcriptions` API. `xai_grok` uses the xAI `/v1/stt` endpoint with `XAI_API_KEY` and `XAI_BASE_URL`. They are separate provider IDs so results can be compared side-by-side.
 
 ---
 
@@ -110,8 +115,8 @@
 ```
 Browser
   ├── Jinja2 HTML (FastAPI :8000)
-  ├── HTMX (upload, partial updates)
-  └── Vite assets (Tailwind CSS, client JS)
+  ├── HTMX (provider status panel)
+  └── Vite assets (Tailwind CSS, client JS — upload, SSE)
         ├── dev:  Vite :5173 with HMR
         └── prod: built to static/dist/
         │
@@ -120,15 +125,16 @@ FastAPI (main.py)
         │
         ├── config.py          ← Pydantic Settings
         ├── audio.py           ← decode/normalize (shared preprocessor)
+        ├── transcribe.py      ← parallel fan-out + timeouts
+        ├── sessions.py        ← in-memory SSE session store
         └── providers/
                 ├── base.py
-                ├── whisper_local.py
                 ├── deepgram.py
-                ├── google.py
+                ├── google.py    ← GCS upload for audio > ~59s
                 ├── openai_whisper.py
                 └── xai_grok.py
                         │
-                        └── asyncio.gather → per-provider transcribe()
+                        └── asyncio → per-provider transcribe()
 ```
 
 Audio is normalized once to **16 kHz mono PCM (WAV bytes)** before fan-out. Providers that need a different format convert internally if required.
@@ -188,8 +194,8 @@ List configured providers and availability.
 {
   "providers": [
     {
-      "id": "whisper_local",
-      "display_name": "faster-whisper",
+      "id": "openai_whisper",
+      "display_name": "OpenAI GPT-4o Transcribe",
       "enabled": true,
       "available": true,
       "reason": null
@@ -200,6 +206,32 @@ List configured providers and availability.
       "enabled": true,
       "available": false,
       "reason": "DEEPGRAM_API_KEY not set"
+    }
+  ]
+}
+```
+
+Enabled providers include a `billing` object with the active plan and rate.
+
+### `GET /api/billing/plans`
+
+Catalog of supported billing plans with official rates, rounding rules, and which plan is active per provider.
+
+**Response `200`:**
+
+```json
+{
+  "plans": [
+    {
+      "id": "nova-2-batch-payg",
+      "provider_id": "deepgram",
+      "label": "Deepgram Nova-2 · batch · PAYG",
+      "model": "nova-2",
+      "billing_mode": "batch",
+      "usd_per_minute": 0.0043,
+      "free_minutes_monthly": 0,
+      "pricing_url": "https://deepgram.com/pricing",
+      "active_for_provider": true
     }
   ]
 }
@@ -223,13 +255,20 @@ Upload audio and transcribe with all enabled, available providers.
   "audio_duration_sec": 10.2,
   "results": [
     {
-      "provider_id": "whisper_local",
+      "provider_id": "openai_whisper",
       "status": "ok",
       "text": "Hello world.",
       "latency_ms": 1240,
       "word_count": 2,
       "confidence": null,
-      "error": null
+      "error": null,
+      "cost": {
+        "usd": 0.001,
+        "plan_id": "gpt-4o-transcribe",
+        "plan_label": "OpenAI GPT-4o Transcribe",
+        "billable_duration_sec": 10.2,
+        "rate_usd_per_minute": 0.006
+      }
     },
     {
       "provider_id": "deepgram",
@@ -254,6 +293,20 @@ Upload audio and transcribe with all enabled, available providers.
 
 Per-provider timeouts do not fail the whole request; they appear as `status: "error"` on that provider's result.
 
+**Progressive UI:** With `X-Progressive: 1`, the POST returns loading cards immediately; results stream via SSE at `GET /api/transcribe/sessions/{session_id}/events`.
+
+### `GET /api/transcribe/sessions/{session_id}/events`
+
+Server-Sent Events stream for a transcription session created by progressive `POST /api/transcribe`.
+
+**Events:**
+
+| Event | Payload | When |
+|-------|---------|------|
+| `result` | `{"provider_id": "...", "html": "...", "result": {...}}` | One provider finished |
+| `error` | `{"message": "..."}` | Stream-level failure |
+| `done` | `{"audio_duration_sec": 10.2}` | All providers finished |
+
 ---
 
 ## Configuration
@@ -262,34 +315,37 @@ Copy `.env.example` to `.env`. All settings load via Pydantic Settings.
 
 | Variable                      | Default                  | Description                                      |
 |-------------------------------|--------------------------|--------------------------------------------------|
-| `ENABLED_PROVIDERS`           | `whisper_local`          | Comma-separated provider IDs                     |
+| `ENABLED_PROVIDERS`           | `openai_whisper`         | Comma-separated provider IDs                     |
 | `HOST`                        | `127.0.0.1`              | Bind address (local only by default)             |
 | `PORT`                        | `8000`                   | Server port                                      |
 | `MAX_UPLOAD_MB`               | `25`                     | Max upload size                                  |
 | `MAX_AUDIO_DURATION_SEC`      | `300`                    | Max audio duration                               |
 | `PROVIDER_TIMEOUT_SEC`        | `120`                    | Per-provider timeout                             |
-| `WHISPER_MODEL`               | `base`                   | faster-whisper model (`tiny`, `base`, `small`…)  |
-| `WHISPER_DEVICE`              | `cpu`                    | `cpu` or `cuda`                                  |
+| `OPENAI_TRANSCRIBE_MODEL`     | `gpt-4o-transcribe`      | OpenAI transcription model                       |
+| `DEEPGRAM_MODEL`              | `nova-3`                 | Deepgram model                                   |
+| `GOOGLE_SPEECH_MODEL`         | `chirp_3`                | Google Speech-to-Text v2 model                   |
+| `GOOGLE_SPEECH_REGION`        | `us`                     | Google STT region (`us`, `eu`, …)                |
 | `DEEPGRAM_API_KEY`            | —                        | Required when `deepgram` is enabled              |
 | `GOOGLE_APPLICATION_CREDENTIALS` | —                     | Path to service account JSON                     |
+| `GOOGLE_STORAGE_BUCKET`       | —                        | GCS bucket for Google audio longer than ~60s     |
 | `OPENAI_API_KEY`              | —                        | Required when `openai_whisper` is enabled        |
 | `OPENAI_BASE_URL`             | `https://api.openai.com/v1` | Override for OpenAI-compatible APIs           |
 | `XAI_API_KEY`                 | —                        | Required when `xai_grok` is enabled              |
 | `XAI_BASE_URL`                | `https://api.x.ai/v1`    | xAI OpenAI-compatible base URL                   |
+| `BILLING_PLAN_*`              | per provider             | Billing plan ID (see `GET /api/billing/plans`)   |
+| `BILLING_MONTHLY_MINUTES_*`   | `0`                      | Minutes used this month (free/volume tier calc)  |
 
 **Example `.env`:**
 
 ```env
-ENABLED_PROVIDERS=whisper_local,deepgram,openai_whisper
+ENABLED_PROVIDERS=openai_whisper,deepgram,google
 
-WHISPER_MODEL=base
-WHISPER_DEVICE=cpu
+OPENAI_API_KEY=your_key_here
 
 DEEPGRAM_API_KEY=your_key_here
 
 GOOGLE_APPLICATION_CREDENTIALS=path/to/service-account.json
-
-OPENAI_API_KEY=your_key_here
+GOOGLE_STORAGE_BUCKET=your-bucket-name
 
 XAI_API_KEY=your_xai_key_here
 ```
@@ -325,7 +381,7 @@ Server-rendered HTML stays in Jinja2 templates. Vite is **not** a SPA — it bun
 **Commands:**
 
 ```bash
-uv run dev     # Vite HMR + Uvicorn reload (development)
+uv run dev     # Vite HMR + Uvicorn (no reload)
 uv run build   # Vite production build → static/dist/
 uv run start   # Uvicorn without dev mode (requires build first)
 ```
@@ -340,7 +396,11 @@ stt-arena/
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── src/
-│       ├── main.ts             # HTMX + future client modules
+│       ├── main.ts             # App bootstrap
+│       ├── transcribe.ts       # Upload, SSE, batch, export
+│       ├── record.ts           # Microphone capture
+│       ├── waveform.ts         # Waveform preview
+│       ├── export.ts           # CSV/JSON download helpers
 │       └── style.css           # Tailwind entry
 ├── src/stt_arena/
 │   ├── __init__.py
@@ -352,16 +412,19 @@ stt-arena/
 │   ├── config.py               # Pydantic Settings
 │   ├── vite.py                 # Dev/prod asset URL helper
 │   ├── audio.py                # Decode, validate, normalize audio
+│   ├── cost.py                 # Billing plans and cost calculation
+│   ├── transcribe.py           # Parallel fan-out orchestration
+│   ├── sessions.py             # In-memory SSE transcription sessions
 │   ├── providers/
 │   │   ├── __init__.py         # Provider registry
 │   │   ├── base.py             # Abstract base class + TranscriptionResult
-│   │   ├── whisper_local.py
 │   │   ├── deepgram.py
 │   │   ├── google.py
 │   │   ├── openai_whisper.py
 │   │   └── xai_grok.py
 │   ├── templates/
-│   │   └── index.html          # Main UI (Jinja2 + HTMX)
+│   │   ├── index.html          # Main UI
+│   │   └── partials/           # Provider panel, result cards, SSE shell
 │   └── static/
 │       └── dist/               # Vite build output (gitignored)
 ├── tests/
@@ -435,37 +498,29 @@ uv run start
 
 ## Acceptance criteria (MVP)
 
-- [ ] Upload a 10s WAV → all enabled, available providers return results within `PROVIDER_TIMEOUT_SEC`
-- [ ] Upload MP3/WebM → server normalizes and transcribes successfully
-- [ ] One provider misconfigured or failing → other providers still return; failed card shows error
-- [ ] Provider with missing API key → listed as `available: false` in `/api/providers`; excluded from transcribe
-- [ ] File > 25 MB or > 5 min → `400`/`413` with clear message
-- [ ] No audio files remain on disk after request completes
-- [ ] App runs with only `whisper_local` enabled and no cloud keys
+- [x] Upload a 10s WAV → all enabled, available providers return results within `PROVIDER_TIMEOUT_SEC`
+- [x] Upload MP3/WebM → server normalizes and transcribes successfully
+- [x] One provider misconfigured or failing → other providers still return; failed card shows error
+- [x] Provider with missing API key → listed as `available: false` in `/api/providers`; excluded from transcribe
+- [x] File > 25 MB or > 5 min → `400`/`413` with clear message
+- [x] No audio files remain on disk after request completes (ffmpeg temps and GCS objects cleaned up)
+- [x] Drag-and-drop, microphone recording, batch upload, waveform preview, and CSV/JSON export
 
 ---
 
 ## Testing
 
-| Layer        | What to test                                              |
-|--------------|-----------------------------------------------------------|
-| Unit         | Settings loading, provider `is_available()`, audio validation |
-| Unit         | Each provider with mocked HTTP / SDK responses            |
-| Integration  | `POST /api/transcribe` with a short fixture WAV           |
-| CI           | `ruff check`, `basedpyright`, `pytest`                    |
+Manual verification is sufficient for v1. Optional local checks:
 
-Optional: golden-file test — fixed sample WAV, assert non-empty text from `whisper_local`.
-
----
+```bash
+uv run ruff check src
+uv run basedpyright src
+uv run pytest
+```
 
 ## Future roadmap
 
-- Live browser microphone recording
-- Estimated cost per transcription (provider-specific pricing tables)
-- Export results (CSV, JSON)
-- Audio waveform visualization
-- Batch processing (multiple files)
-- Progressive HTMX updates (cards appear as each provider completes)
+- Live streaming transcription (real-time partial results while speaking)
 - User accounts and transcription history
 
 ---
