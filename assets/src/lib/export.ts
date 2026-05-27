@@ -1,35 +1,4 @@
-export type CostBreakdown = {
-  usd: number;
-  plan_id: string;
-  plan_label: string;
-  model: string;
-  billing_mode: string;
-  audio_duration_sec: number;
-  billable_duration_sec: number;
-  rate_usd_per_minute: number;
-  free_minutes_applied: number;
-  monthly_minutes_used: number;
-  pricing_url: string;
-  notes: string;
-};
-
-export type ExportResult = {
-  provider_id: string;
-  display_name?: string;
-  status: string;
-  text: string | null;
-  latency_ms: number;
-  word_count: number | null;
-  confidence: number | null;
-  error: string | null;
-  estimated_cost_usd?: number | null;
-  cost?: CostBreakdown | null;
-};
-
-export type ExportPayload = {
-  audio_duration_sec: number;
-  results: ExportResult[];
-};
+import type { ExportPayload, TranscriptionResult } from "../api/types";
 
 function downloadBlob(filename: string, blob: Blob): void {
   const url = URL.createObjectURL(blob);
@@ -40,19 +9,19 @@ function downloadBlob(filename: string, blob: Blob): void {
   URL.revokeObjectURL(url);
 }
 
+function csvEscape(value: string): string {
+  if (/[",\n]/.test(value)) {
+    return `"${value.replaceAll('"', '""')}"`;
+  }
+  return value;
+}
+
 export function downloadJson(payload: ExportPayload): void {
   const body = JSON.stringify(payload, null, 2);
   downloadBlob(
     `stt-arena-${Date.now()}.json`,
     new Blob([body], { type: "application/json" }),
   );
-}
-
-function csvEscape(value: string): string {
-  if (/[",\n]/.test(value)) {
-    return `"${value.replaceAll('"', '""')}"`;
-  }
-  return value;
 }
 
 export function downloadCsv(payload: ExportPayload): void {
@@ -95,13 +64,21 @@ export function downloadCsv(payload: ExportPayload): void {
   );
 }
 
-function sumCosts(results: ExportResult[]): number {
+export async function copyJson(payload: ExportPayload): Promise<void> {
+  await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+}
+
+function sumCosts(results: TranscriptionResult[]): number {
   return results.reduce((total, result) => {
     const value = result.cost?.usd ?? result.estimated_cost_usd ?? 0;
     return total + value;
   }, 0);
 }
 
-export function formatTotalCost(results: ExportResult[]): string {
+export function formatTotalCost(results: TranscriptionResult[]): string {
   return `$${sumCosts(results).toFixed(4)}`;
+}
+
+export function getResultCost(result: TranscriptionResult): number {
+  return result.cost?.usd ?? result.estimated_cost_usd ?? 0;
 }
