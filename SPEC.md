@@ -44,12 +44,12 @@
 
 ## User flow
 
-1. User opens `GET /` → provider status loads via HTMX (`GET /api/providers`).
+1. User opens `GET /` → React SPA loads; client fetches providers (`GET /api/providers`) and languages (`GET /api/languages`).
 2. User drops, selects, or records an audio file (multiple files supported).
-3. Client `POST`s multipart form to `/api/transcribe` with `X-Progressive: 1`.
-4. Server validates audio, normalizes once, returns loading skeleton cards.
+3. Client `POST`s multipart form to `/api/transcribe` with `X-Progressive: 1` and `Accept: application/json`.
+4. Server validates audio, normalizes once, returns session JSON (`session_id`, pending providers).
 5. Client opens SSE (`GET /api/transcribe/sessions/{id}/events`); providers run in parallel.
-6. Each completed provider swaps its card in the masonry grid (fastest first).
+6. Each completed provider updates the results workspace (Cards, Table, or Compare view).
 7. User exports combined results as CSV or JSON.
 
 ---
@@ -114,9 +114,8 @@
 
 ```
 Browser
-  ├── Jinja2 HTML (FastAPI :8000)
-  ├── HTMX (provider status panel)
-  └── Vite assets (Tailwind CSS, client JS — upload, SSE)
+  ├── Jinja2 shell (FastAPI :8000) — mounts React SPA at #root
+  └── Vite + React SPA (Tailwind CSS, shadcn/ui components)
         ├── dev:  Vite :5173 with HMR
         └── prod: built to static/dist/
         │
@@ -357,10 +356,11 @@ XAI_API_KEY=your_xai_key_here
 - **Python 3.13+**
 - **uv** – package manager
 - **FastAPI** + **Uvicorn** – backend
-- **Jinja2** – server-rendered HTML
-- **HTMX** – progressive enhancement (upload, swaps)
-- **Vite** – asset pipeline (Tailwind CSS, client JS modules)
+- **Jinja2** – minimal HTML shell for SPA mount
+- **React 19** + **TypeScript** – client UI (upload, SSE, comparison views)
+- **Vite** – asset pipeline and dev server
 - **Tailwind CSS v4** – styling (`@tailwindcss/vite`)
+- **Radix UI / shadcn-style components** – accessible UI primitives
 - **Pydantic v2** – settings and validation
 - **httpx** – async HTTP client for cloud providers
 - **ruff** – linter/formatter
@@ -369,14 +369,14 @@ XAI_API_KEY=your_xai_key_here
 
 ### UI architecture
 
-Server-rendered HTML stays in Jinja2 templates. Vite is **not** a SPA — it bundles CSS and client-side JS only.
+FastAPI serves a minimal Jinja2 shell with a `#root` mount point. Vite bundles a React SPA for all interactive UI.
 
 | Mode | HTML | Assets |
 |------|------|--------|
 | **Dev** (`uv run dev`) | FastAPI `:8000` | Vite `:5173` with HMR via `@vite/client` |
 | **Prod** | FastAPI | `assets/` → `uv run build` → `static/dist/` + `manifest.json` |
 
-`stt_arena/vite.py` reads the Vite manifest in production and injects hashed asset URLs into templates.
+Progressive transcription uses JSON session responses plus SSE result events (structured `result` payloads). HTML partials remain for backward-compatible API clients.
 
 **Commands:**
 
@@ -392,16 +392,17 @@ uv run start   # Uvicorn without dev mode (requires build first)
 
 ```
 stt-arena/
-├── assets/                     # Vite asset pipeline (CSS, client JS)
+├── assets/                     # Vite + React frontend
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── src/
-│       ├── main.ts             # App bootstrap
-│       ├── transcribe.ts       # Upload, SSE, batch, export
-│       ├── record.ts           # Microphone capture
-│       ├── waveform.ts         # Waveform preview
-│       ├── export.ts           # CSV/JSON download helpers
-│       └── style.css           # Tailwind entry
+│       ├── main.tsx            # React entry
+│       ├── App.tsx             # App shell and layout
+│       ├── index.css           # Tailwind + design tokens
+│       ├── api/                # fetch + SSE clients
+│       ├── hooks/              # providers, waveform, recorder, stream
+│       ├── components/         # layout, audio, results, ui
+│       └── lib/                # export, format, diff helpers
 ├── src/stt_arena/
 │   ├── __init__.py
 │   ├── main.py                 # FastAPI app entrypoint
