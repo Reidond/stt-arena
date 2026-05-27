@@ -9,10 +9,12 @@ import sys
 import time
 
 from stt_arena.assets_util import ASSETS, ROOT, SRC, ensure_assets_deps, npm
+from stt_arena.config import get_settings
 
 
 def main() -> None:
     ensure_assets_deps()
+    settings = get_settings()
 
     env = os.environ.copy()
     env["STT_ARENA_DEV"] = "1"
@@ -39,7 +41,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, shutdown)
 
     vite = subprocess.Popen(
-        [npm(), "run", "dev"],
+        [npm(), "run", "dev", "--", "--logLevel", "warn"],
         cwd=ASSETS,
         env=env,
     )
@@ -51,13 +53,10 @@ def main() -> None:
             "-m",
             "uvicorn",
             "stt_arena.main:app",
-            "--reload",
             "--host",
-            "127.0.0.1",
+            settings.host,
             "--port",
-            "8000",
-            "--reload-dir",
-            str(SRC),
+            str(settings.port),
         ],
         cwd=ROOT,
         env=env,
@@ -66,8 +65,7 @@ def main() -> None:
 
     print()
     print("  stt-arena dev")
-    print("  App   → http://127.0.0.1:8000")
-    print("  Vite  → http://127.0.0.1:5173  (asset HMR)")
+    print(f"  → http://{settings.host}:{settings.port}")
     print()
     print("  Press Ctrl+C to stop")
     print()
