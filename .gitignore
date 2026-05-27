@@ -17,3 +17,4 @@ src/stt_arena/static/dist/
 
 # Environment
 .env
+/gcloud-service-key.json
