@@ -1,0 +1,22 @@
+[project]
+name = "stt-arena"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "deepgram-sdk>=7.2.0",
+    "fastapi[standard]>=0.136.3",
+    "faster-whisper>=1.2.1",
+    "google-cloud-speech>=2.39.0",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.14.1",
+    "python-multipart>=0.0.29",
+    "uvicorn>=0.48.0",
+]
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.39.6",
+    "ruff>=0.15.14",
+]
