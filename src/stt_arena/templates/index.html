@@ -8,6 +8,15 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23059669'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' fill='white' font-family='system-ui'%3EA%3C/text%3E%3C/svg%3E"
     />
+    {% if is_dev %}
+    <script type="module">
+      import RefreshRuntime from "{{ vite_origin }}/@react-refresh";
+      RefreshRuntime.injectIntoGlobalHook(window);
+      window.$RefreshReg$ = () => {};
+      window.$RefreshSig$ = () => (type) => type;
+      window.__vite_plugin_react_preamble_installed__ = true;
+    </script>
+    {% endif %}
     {% for tag in vite_tags %}
       {% if tag.tag == "link" %}
     <link{% for key, value in tag.attrs.items() %} {{ key }}="{{ value }}"{% endfor %} />
@@ -16,102 +25,7 @@
       {% endif %}
     {% endfor %}
   </head>
-  <body class="font-sans">
-    <div class="mx-auto max-w-6xl px-4 py-10">
-      <header class="mb-10">
-        <p class="text-sm font-medium uppercase tracking-widest text-emerald-400">
-          Local-first STT benchmark
-        </p>
-        <h1 class="mt-2 text-4xl font-semibold tracking-tight text-white">
-          stt-arena
-        </h1>
-        <p class="mt-3 max-w-2xl text-zinc-400">
-          Upload audio and compare transcription results across providers in parallel.
-        </p>
-      </header>
-
-      <section
-        class="mb-8 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6"
-        hx-get="/api/providers"
-        hx-trigger="load"
-        hx-swap="innerHTML"
-        id="providers-panel"
-      >
-        <p class="text-sm text-zinc-500">Loading providers…</p>
-      </section>
-
-      <section
-        id="upload-dropzone"
-        class="upload-dropzone rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/40 p-8 transition-colors"
-      >
-        <form id="transcribe-form" class="space-y-4">
-          <div>
-            <span class="mb-2 block text-sm font-medium text-zinc-300">Audio file</span>
-            <p class="mb-3 text-sm text-zinc-500">
-              Drop files here, browse, or record from your microphone.
-              WAV, MP3, WebM, OGG, M4A · max 25 MB · max 5 min each.
-            </p>
-            <canvas
-              id="audio-waveform"
-              width="800"
-              height="80"
-              class="mb-3 hidden h-20 w-full rounded-lg bg-zinc-950/80 md:block"
-            ></canvas>
-            <p id="selected-file-name" class="mb-3 truncate text-sm text-zinc-400">
-              No file selected
-            </p>
-            <div class="flex flex-wrap gap-3">
-              <input
-                id="audio-file"
-                type="file"
-                name="file"
-                accept="audio/*,.wav,.mp3,.webm,.ogg,.m4a"
-                multiple
-                class="block w-full min-w-[14rem] flex-1 cursor-pointer rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-                required
-              />
-              <button
-                id="record-button"
-                type="button"
-                data-recording="false"
-                class="rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:border-emerald-600 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Record
-              </button>
-            </div>
-          </div>
-          <label class="block">
-            <span class="mb-2 block text-sm font-medium text-zinc-300">Language</span>
-            <select
-              id="language-select"
-              name="language"
-              class="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <option value="">Auto-detect</option>
-              {% for lang in languages %}
-              <option value="{{ lang.code }}">{{ lang.label }}</option>
-              {% endfor %}
-            </select>
-            <p class="mt-2 text-xs text-zinc-500">
-              Leave as Auto-detect unless you know the spoken language.
-            </p>
-          </label>
-          <div class="flex items-center gap-3">
-            <button
-              id="transcribe-submit"
-              type="submit"
-              class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Transcribe
-            </button>
-            <p id="transcribe-indicator" class="text-sm text-zinc-400">
-              Transcribing…
-            </p>
-          </div>
-        </form>
-      </section>
-
-      <section id="results" class="mt-8"></section>
-    </div>
+  <body>
+    <div id="root"></div>
   </body>
 </html>

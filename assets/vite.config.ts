@@ -1,11 +1,20 @@
 import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 
 const outDir = resolve(__dirname, "../src/stt_arena/static/dist");
 
+const viteDevOrigin =
+  process.env.VITE_DEV_ORIGIN ?? "http://127.0.0.1:5173";
+
 export default defineConfig(({ mode }) => ({
-  plugins: [tailwindcss()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      "@": resolve(__dirname, "src"),
+    },
+  },
   base: mode === "production" ? "/static/dist/" : "/",
   build: {
     manifest: true,
@@ -13,7 +22,7 @@ export default defineConfig(({ mode }) => ({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: resolve(__dirname, "src/main.ts"),
+        main: resolve(__dirname, "src/main.tsx"),
       },
     },
   },
@@ -21,7 +30,9 @@ export default defineConfig(({ mode }) => ({
     host: "127.0.0.1",
     port: 5173,
     strictPort: true,
+    // Reflect the requesting backend origin (localhost vs 127.0.0.1 both work).
     cors: true,
-    origin: "http://127.0.0.1:5173",
+    // Absolute asset URLs in dev CSS/modules should target the Vite server.
+    origin: viteDevOrigin,
   },
 }));

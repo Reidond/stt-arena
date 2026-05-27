@@ -1,0 +1,128 @@
+@import "tailwindcss";
+@import "@fontsource/geist-sans/400.css";
+@import "@fontsource/geist-sans/500.css";
+@import "@fontsource/geist-sans/600.css";
+
+@source "../../src/stt_arena/templates/**/*.html";
+
+@theme {
+  --font-sans: "Geist Sans", ui-sans-serif, system-ui, sans-serif;
+  --color-background: #09090b;
+  --color-surface-1: #18181b;
+  --color-surface-2: #27272a;
+  --color-border-subtle: #3f3f46;
+  --color-accent: #10b981;
+  --color-accent-muted: #064e3b;
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error: #f87171;
+}
+
+@layer base {
+  * {
+    @apply border-zinc-800;
+  }
+
+  body {
+    @apply min-h-screen bg-background font-sans text-zinc-100 antialiased;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
+
+@layer utilities {
+  .surface-1 {
+    @apply border border-zinc-800 bg-zinc-900/80;
+  }
+
+  .surface-2 {
+    @apply border border-zinc-800 bg-zinc-950/80;
+  }
+
+  .card-enter {
+    animation: card-enter 0.35s ease-out both;
+  }
+
+  .record-pulse {
+    animation: record-pulse 1.2s ease-in-out infinite;
+  }
+}
+
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes record-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-enter,
+  .record-pulse {
+    animation: none;
+  }
+}
+
+.masonry-grid {
+  columns: 1;
+  column-gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .masonry-grid {
+    columns: 2;
+  }
+}
+
+@media (min-width: 1280px) {
+  .masonry-grid {
+    columns: 3;
+  }
+}
+
+.masonry-item {
+  break-inside: avoid;
+  margin-bottom: 1rem;
+}
+
+.audio-player__seek::-webkit-slider-thumb {
+  appearance: none;
+  height: 0.875rem;
+  width: 0.875rem;
+  border-radius: 9999px;
+  border: 2px solid rgb(16 185 129);
+  background: rgb(9 9 11);
+  cursor: pointer;
+}
+
+.audio-player__seek::-moz-range-thumb {
+  height: 0.875rem;
+  width: 0.875rem;
+  border-radius: 9999px;
+  border: 2px solid rgb(16 185 129);
+  background: rgb(9 9 11);
+  cursor: pointer;
+}
