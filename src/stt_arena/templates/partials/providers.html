@@ -23,6 +23,15 @@
       </span>
       {% endif %}
     </div>
+    {% if provider.billing %}
+    <p class="mt-2 text-xs text-zinc-500">
+      Billing: {{ provider.billing.plan_label }}
+      · ${{ "%.4f"|format(provider.billing.rate_usd_per_minute) }}/min
+      {% if provider.billing.free_minutes_monthly > 0 %}
+      · {{ provider.billing.free_minutes_monthly|int }} free min/mo
+      {% endif %}
+    </p>
+    {% endif %}
     {% if provider.reason %}
     <p class="mt-2 text-xs text-zinc-500">{{ provider.reason }}</p>
     {% endif %}

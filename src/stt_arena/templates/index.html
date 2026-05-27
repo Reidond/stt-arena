@@ -40,26 +40,61 @@
         <p class="text-sm text-zinc-500">Loading providers…</p>
       </section>
 
-      <section class="rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/40 p-8">
+      <section
+        id="upload-dropzone"
+        class="upload-dropzone rounded-2xl border border-dashed border-zinc-700 bg-zinc-900/40 p-8 transition-colors"
+      >
         <form id="transcribe-form" class="space-y-4">
-          <label class="block">
+          <div>
             <span class="mb-2 block text-sm font-medium text-zinc-300">Audio file</span>
-            <input
-              type="file"
-              name="file"
-              accept="audio/*,.wav,.mp3,.webm,.ogg,.m4a"
-              class="block w-full cursor-pointer rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-              required
-            />
-          </label>
+            <p class="mb-3 text-sm text-zinc-500">
+              Drop files here, browse, or record from your microphone.
+              WAV, MP3, WebM, OGG, M4A · max 25 MB · max 5 min each.
+            </p>
+            <canvas
+              id="audio-waveform"
+              width="800"
+              height="80"
+              class="mb-3 hidden h-20 w-full rounded-lg bg-zinc-950/80 md:block"
+            ></canvas>
+            <p id="selected-file-name" class="mb-3 truncate text-sm text-zinc-400">
+              No file selected
+            </p>
+            <div class="flex flex-wrap gap-3">
+              <input
+                id="audio-file"
+                type="file"
+                name="file"
+                accept="audio/*,.wav,.mp3,.webm,.ogg,.m4a"
+                multiple
+                class="block w-full min-w-[14rem] flex-1 cursor-pointer rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm file:mr-4 file:rounded-md file:border-0 file:bg-emerald-600 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-white hover:file:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                required
+              />
+              <button
+                id="record-button"
+                type="button"
+                data-recording="false"
+                class="rounded-lg border border-zinc-700 bg-zinc-950 px-4 py-2 text-sm font-medium text-zinc-200 transition hover:border-emerald-600 hover:text-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Record
+              </button>
+            </div>
+          </div>
           <label class="block">
-            <span class="mb-2 block text-sm font-medium text-zinc-300">Language (optional)</span>
-            <input
-              type="text"
+            <span class="mb-2 block text-sm font-medium text-zinc-300">Language</span>
+            <select
+              id="language-select"
               name="language"
-              placeholder="en"
-              class="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 disabled:cursor-not-allowed disabled:opacity-60"
-            />
+              class="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <option value="">Auto-detect</option>
+              {% for lang in languages %}
+              <option value="{{ lang.code }}">{{ lang.label }}</option>
+              {% endfor %}
+            </select>
+            <p class="mt-2 text-xs text-zinc-500">
+              Leave as Auto-detect unless you know the spoken language.
+            </p>
           </label>
           <div class="flex items-center gap-3">
             <button
@@ -76,7 +111,7 @@
         </form>
       </section>
 
-      <section id="results" class="mt-8 columns-1 gap-4 lg:columns-2 xl:columns-3"></section>
+      <section id="results" class="mt-8"></section>
     </div>
   </body>
 </html>
