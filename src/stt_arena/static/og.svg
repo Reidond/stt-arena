@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">STT Arena</title>
+  <desc id="desc">A dark interface preview for comparing speech-to-text providers.</desc>
+  <rect width="1200" height="630" fill="#09090b"/>
+  <rect x="72" y="88" width="1056" height="454" rx="28" fill="#111113" stroke="#27272a" stroke-width="2"/>
+  <text x="112" y="177" fill="#ffffff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="72" font-weight="700">STT Arena</text>
+  <text x="112" y="238" fill="#a1a1aa" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="28">Compare speech-to-text providers side by side.</text>
+  <rect x="112" y="304" width="976" height="132" rx="18" fill="#09090b" stroke="#3f3f46" stroke-width="2" stroke-dasharray="8 8"/>
+  <circle cx="186" cy="370" r="34" fill="#064e3b" stroke="#10b981" stroke-width="2"/>
+  <path d="M186 349v36m0 0-14-14m14 14 14-14" fill="none" stroke="#34d399" stroke-linecap="round" stroke-linejoin="round" stroke-width="5"/>
+  <rect x="254" y="346" width="318" height="20" rx="10" fill="#3f3f46"/>
+  <rect x="254" y="382" width="492" height="16" rx="8" fill="#27272a"/>
+  <rect x="838" y="338" width="198" height="64" rx="14" fill="#059669"/>
+  <text x="937" y="379" fill="#ffffff" font-family="Inter, ui-sans-serif, system-ui, sans-serif" font-size="22" font-weight="600" text-anchor="middle">Transcribe</text>
+</svg>

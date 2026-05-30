@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AudioLines } from "lucide-react";
 import type { LanguageOption } from "@/api/types";
 import { Dropzone } from "@/components/audio/Dropzone";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
@@ -194,9 +195,9 @@ export function AudioInputPanel({
         onDiscard={recorder.discard}
       />
 
-      <div className="space-y-2 border-t border-zinc-800 pt-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
-          <label className="block w-full space-y-2 sm:max-w-xs">
+      <div className="space-y-4 border-t border-zinc-800 pt-5">
+        <div>
+          <label className="block max-w-md space-y-2">
             <span className="text-sm font-medium text-zinc-300">Language</span>
             <Select
               value={language || "auto"}
@@ -218,10 +219,20 @@ export function AudioInputPanel({
               </SelectContent>
             </Select>
           </label>
+          <p className="mt-2 text-xs text-zinc-500">
+            Leave as Auto-detect unless you know the spoken language.
+          </p>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={disabled || files.length === 0}>
-              Transcribe
+        <div className="border-t border-zinc-800 pt-4">
+          <div className="flex flex-col gap-2">
+            <Button
+              type="submit"
+              disabled={disabled || files.length === 0}
+              className="h-13 w-full px-6 text-base font-semibold shadow-[0_0_0_1px_rgba(52,211,153,0.18),0_12px_28px_rgba(16,185,129,0.14)] disabled:bg-emerald-900/60 disabled:text-emerald-50/60 disabled:opacity-80"
+            >
+              <AudioLines className="h-5 w-5" aria-hidden="true" />
+              Transcribe audio
             </Button>
             {isRunning && onCancel ? (
               <Button type="button" variant="secondary" onClick={onCancel}>
@@ -235,9 +246,6 @@ export function AudioInputPanel({
             ) : null}
           </div>
         </div>
-        <p className="text-xs text-zinc-500">
-          Leave as Auto-detect unless you know the spoken language.
-        </p>
       </div>
 
       {isRunning && batchProgress ? (

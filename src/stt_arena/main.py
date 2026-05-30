@@ -25,7 +25,7 @@ from stt_arena.vite_proxy import register_vite_dev_proxy
 PACKAGE_DIR = Path(__file__).resolve().parent
 TEMPLATES = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
 
-app = FastAPI(title="stt-arena", version="0.1.0")
+app = FastAPI(title="STT Arena", version="0.1.0")
 
 if (PACKAGE_DIR / "static" / "dist").is_dir():
     app.mount(
@@ -124,6 +124,8 @@ async def _prepare_upload(
 @app.get("/")
 async def index(request: Request):
     settings = get_settings()
+    page_url = str(request.url.replace(query=""))
+    social_image_url = str(request.url_for("static", path="og.svg"))
     return TEMPLATES.TemplateResponse(
         request,
         "index.html",
@@ -131,6 +133,8 @@ async def index(request: Request):
             "vite_tags": vite_tags(settings),
             "is_dev": settings.is_dev,
             "vite_origin": settings.vite_origin,
+            "page_url": page_url,
+            "social_image_url": social_image_url,
         },
     )
 
