@@ -6,7 +6,7 @@ import { defineConfig } from "vite";
 const outDir = resolve(__dirname, "../src/stt_arena/static/dist");
 
 const viteDevOrigin =
-  process.env.VITE_DEV_ORIGIN ?? "http://127.0.0.1:5173";
+  process.env.VITE_DEV_ORIGIN ?? "http://127.0.0.1:8000";
 
 export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
@@ -27,9 +27,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   server: {
-    host: "127.0.0.1",
-    port: 5173,
-    strictPort: true,
+    allowedHosts: ["vite", "localhost", "127.0.0.1"],
     // Reflect the requesting backend origin (localhost vs 127.0.0.1 both work).
     cors: true,
     // Absolute asset URLs in dev CSS/modules should target the Vite server.

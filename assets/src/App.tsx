@@ -12,6 +12,7 @@ export function App() {
   const { runs, isRunning, liveMessage, batchProgress, transcribeFiles, cancel } =
     useTranscriptionStream();
   const [language, setLanguage] = useState("");
+  const [diarizationEnabled, setDiarizationEnabled] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const activeRun = useMemo(() => {
@@ -23,7 +24,7 @@ export function App() {
 
   const handleSubmit = (files: File[]) => {
     setFormError(null);
-    void transcribeFiles(files, language);
+    void transcribeFiles(files, language, diarizationEnabled);
   };
 
   return (
@@ -47,7 +48,9 @@ export function App() {
           batchProgress={batchProgress}
           language={language}
           languages={languages}
+          diarizationEnabled={diarizationEnabled}
           onLanguageChange={setLanguage}
+          onDiarizationChange={setDiarizationEnabled}
           onSubmit={handleSubmit}
           onCancel={cancel}
           onError={setFormError}

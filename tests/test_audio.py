@@ -56,6 +56,8 @@ def test_prepare_audio_normalizes_wav() -> None:
         max_duration_sec=300,
     )
     assert prepared.mime_type == "audio/wav"
+    assert prepared.source_bytes == wav
+    assert prepared.source_filename == "sample.wav"
     assert prepared.duration_sec > 0
     assert prepared.wav_bytes.startswith(b"RIFF")
 
@@ -80,4 +82,3 @@ def test_prepare_audio_rejects_oversized_payload() -> None:
             max_upload_mb=25,
             max_duration_sec=300,
         )
-

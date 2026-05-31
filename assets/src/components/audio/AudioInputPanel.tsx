@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AudioLines } from "lucide-react";
+import { AudioLines, Users } from "lucide-react";
 import type { LanguageOption } from "@/api/types";
 import { Dropzone } from "@/components/audio/Dropzone";
 import { AudioPlayer } from "@/components/audio/AudioPlayer";
@@ -34,7 +34,9 @@ type AudioInputPanelProps = {
   batchProgress?: { current: number; total: number } | null;
   language: string;
   languages: LanguageOption[];
+  diarizationEnabled: boolean;
   onLanguageChange: (value: string) => void;
+  onDiarizationChange: (value: boolean) => void;
   onSubmit: (files: File[]) => void;
   onCancel?: () => void;
   onError: (message: string) => void;
@@ -46,7 +48,9 @@ export function AudioInputPanel({
   batchProgress,
   language,
   languages,
+  diarizationEnabled,
   onLanguageChange,
+  onDiarizationChange,
   onSubmit,
   onCancel,
   onError,
@@ -196,32 +200,58 @@ export function AudioInputPanel({
       />
 
       <div className="space-y-4 border-t border-zinc-800 pt-5">
-        <div>
-          <label className="block max-w-md space-y-2">
-            <span className="text-sm font-medium text-zinc-300">Language</span>
-            <Select
-              value={language || "auto"}
-              onValueChange={(value) =>
-                onLanguageChange(value === "auto" ? "" : value)
-              }
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(17rem,0.8fr)]">
+          <div>
+            <label className="block max-w-md space-y-2">
+              <span className="text-sm font-medium text-zinc-300">Language</span>
+              <Select
+                value={language || "auto"}
+                onValueChange={(value) =>
+                  onLanguageChange(value === "auto" ? "" : value)
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Auto-detect" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Auto-detect</SelectItem>
+                  {languages.map((lang) => (
+                    <SelectItem key={lang.code} value={lang.code}>
+                      {lang.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </label>
+            <p className="mt-2 text-xs text-zinc-500">
+              Leave as Auto-detect unless you know the spoken language.
+            </p>
+          </div>
+
+          <label className="flex min-h-20 cursor-pointer items-center justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-950/60 px-4 py-3 transition-colors hover:border-zinc-700">
+            <span className="flex min-w-0 items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 text-zinc-300">
+                <Users className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-zinc-200">
+                  Speaker diarization
+                </span>
+                <span className="mt-1 block text-xs text-zinc-500">
+                  Label speakers on supported providers.
+                </span>
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              checked={diarizationEnabled}
+              onChange={(event) => onDiarizationChange(event.target.checked)}
               disabled={disabled}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Auto-detect" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="auto">Auto-detect</SelectItem>
-                {languages.map((lang) => (
-                  <SelectItem key={lang.code} value={lang.code}>
-                    {lang.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              className="sr-only peer"
+            />
+            <span className="relative h-6 w-11 shrink-0 rounded-full bg-zinc-800 ring-1 ring-inset ring-zinc-700 transition-colors after:absolute after:left-0.5 after:top-1/2 after:h-5 after:w-5 after:-translate-y-1/2 after:rounded-full after:bg-zinc-200 after:transition-transform peer-checked:bg-emerald-500/80 peer-checked:ring-emerald-500/60 peer-checked:after:translate-x-5 peer-focus-visible:ring-2 peer-focus-visible:ring-emerald-500/50 peer-disabled:opacity-50" />
           </label>
-          <p className="mt-2 text-xs text-zinc-500">
-            Leave as Auto-detect unless you know the spoken language.
-          </p>
         </div>
 
         <div className="border-t border-zinc-800 pt-4">

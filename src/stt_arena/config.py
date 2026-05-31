@@ -1,10 +1,11 @@
-import os
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
+from stt_arena_providers.billing import default_billing_plan
+from stt_arena_vite import ViteSettings
 
 
-class Settings(BaseSettings):
+class Settings(ViteSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -13,18 +14,24 @@ class Settings(BaseSettings):
 
     host: str = "127.0.0.1"
     port: int = 8000
-    dev: bool = False
-
-    vite_host: str = "127.0.0.1"
-    vite_port: int = 5173
-
     enabled_providers: str = "openai_whisper"
     max_upload_mb: int = 25
-    max_audio_duration_sec: int = 300
+    max_audio_duration_sec: int = 900
     provider_timeout_sec: int = 120
+    provider_max_attempts: int = 3
+    provider_retry_base_delay_sec: float = 1.0
+    provider_retry_max_delay_sec: float = 8.0
+    openai_diarize_timeout_sec: int = 600
     google_batch_timeout_sec: int = 600
 
+    log_level: str = "INFO"
+    log_dir: str = "logs"
+    log_file: str = "stt-arena.log"
+    log_max_bytes: int = 5 * 1024 * 1024
+    log_backup_count: int = 5
+
     openai_transcribe_model: str = "gpt-4o-transcribe"
+    openai_diarize_model: str = "gpt-4o-transcribe-diarize"
     deepgram_model: str = "nova-3"
     google_speech_model: str = "chirp_3"
     google_speech_region: str = "us"
@@ -48,14 +55,6 @@ class Settings(BaseSettings):
     billing_monthly_minutes_xai_grok: float = 0
 
     @property
-    def is_dev(self) -> bool:
-        return self.dev or os.getenv("STT_ARENA_DEV") == "1"
-
-    @property
-    def vite_origin(self) -> str:
-        return f"http://{self.vite_host}:{self.vite_port}"
-
-    @property
     def enabled_provider_ids(self) -> list[str]:
         return [p.strip() for p in self.enabled_providers.split(",") if p.strip()]
 
@@ -64,9 +63,7 @@ class Settings(BaseSettings):
         override = getattr(self, field, None)
         if isinstance(override, str) and override:
             return override
-        from stt_arena.cost import DEFAULT_PLAN_BY_PROVIDER
-
-        return DEFAULT_PLAN_BY_PROVIDER[provider_id]
+        return default_billing_plan(provider_id)
 
     def billing_monthly_minutes_used_for(self, provider_id: str) -> float:
         field = f"billing_monthly_minutes_{provider_id}"

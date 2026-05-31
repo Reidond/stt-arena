@@ -39,7 +39,7 @@
     />
     {% if is_dev %}
     <script type="module">
-      import RefreshRuntime from "{{ vite_origin }}/@react-refresh";
+      import RefreshRuntime from "/@react-refresh";
       RefreshRuntime.injectIntoGlobalHook(window);
       window.$RefreshReg$ = () => {};
       window.$RefreshSig$ = () => (type) => type;

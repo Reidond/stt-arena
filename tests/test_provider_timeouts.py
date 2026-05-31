@@ -1,15 +1,37 @@
-from stt_arena.config import Settings
-from stt_arena.provider_timeouts import (
+from stt_arena_providers.providers.google import GOOGLE_SYNC_MAX_DURATION_SEC
+from stt_arena_providers.timeouts import (
     google_batch_operation_timeout_sec,
     provider_timeout_sec,
 )
-from stt_arena.providers.google import GOOGLE_SYNC_MAX_DURATION_SEC
+
+from stt_arena.config import Settings
 
 
 def test_cloud_providers_use_default_timeout() -> None:
-    settings = Settings(provider_timeout_sec=120, google_batch_timeout_sec=600)
+    settings = Settings(
+        provider_timeout_sec=120,
+        openai_diarize_timeout_sec=600,
+        google_batch_timeout_sec=600,
+    )
     assert provider_timeout_sec(settings, "openai_whisper", 106.0) == 120.0
     assert provider_timeout_sec(settings, "google", 30.0) == 120.0
+
+
+def test_openai_diarization_uses_extended_timeout() -> None:
+    settings = Settings(
+        provider_timeout_sec=120,
+        openai_diarize_timeout_sec=600,
+        google_batch_timeout_sec=600,
+    )
+    assert (
+        provider_timeout_sec(
+            settings,
+            "openai_whisper",
+            760.5,
+            diarization=True,
+        )
+        == 600.0
+    )
 
 
 def test_google_sync_uses_default_timeout_at_sixty_seconds() -> None:

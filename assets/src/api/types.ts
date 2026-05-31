@@ -42,6 +42,7 @@ export type ProviderStatus = {
   display_name: string;
   enabled: boolean;
   available: boolean;
+  supports_diarization: boolean;
   reason?: string | null;
   billing?: ProviderBilling | null;
 };

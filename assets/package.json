@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/vite-socket-dev.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },
@@ -30,6 +30,6 @@
     "@vitejs/plugin-react": "^4.7.0",
     "tailwindcss": "^4.1.8",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^7.3.3"
   }
 }

@@ -1,10 +1,10 @@
 from google.cloud.speech_v2.types import cloud_speech
 from google.rpc import status_pb2
-
-from stt_arena.providers.google import (
+from stt_arena_providers.providers.google import (
     _batch_file_error_message,
     _lookup_batch_file_result,
     _parse_batch_response,
+    _parse_recognize_response,
 )
 
 
@@ -12,6 +12,10 @@ def _speech_result(transcript: str) -> cloud_speech.SpeechRecognitionResult:
     return cloud_speech.SpeechRecognitionResult(
         alternatives=[cloud_speech.SpeechRecognitionAlternative(transcript=transcript)],
     )
+
+
+def _word(word: str, speaker_label: str) -> cloud_speech.WordInfo:
+    return cloud_speech.WordInfo(word=word, speaker_label=speaker_label)
 
 
 def test_parse_batch_response_reads_inline_result() -> None:
@@ -27,6 +31,32 @@ def test_parse_batch_response_reads_inline_result() -> None:
 
     text, confidence = _parse_batch_response(response, "gs://bucket/audio.wav")
     assert text == "hello batch"
+    assert confidence is None
+
+
+def test_parse_recognize_response_formats_diarization_words() -> None:
+    response = cloud_speech.RecognizeResponse(
+        results=[
+            cloud_speech.SpeechRecognitionResult(
+                alternatives=[
+                    cloud_speech.SpeechRecognitionAlternative(
+                        transcript="hello there hi",
+                        words=[
+                            _word("hello", "1"),
+                            _word("there", "1"),
+                            _word("hi", "2"),
+                        ],
+                    )
+                ],
+            )
+        ],
+    )
+
+    text, confidence = _parse_recognize_response(
+        response,
+        diarization_enabled=True,
+    )
+    assert text == "Speaker 1: hello there\n\nSpeaker 2: hi"
     assert confidence is None
 
 

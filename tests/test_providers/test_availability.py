@@ -1,10 +1,11 @@
 import json
 
+from stt_arena_providers.providers.deepgram import DeepgramProvider
+from stt_arena_providers.providers.google import GoogleProvider
+from stt_arena_providers.providers.openai_whisper import OpenAIWhisperProvider
+from stt_arena_providers.providers.xai_grok import XAIGrokProvider
+
 from stt_arena.config import Settings
-from stt_arena.providers.deepgram import DeepgramProvider
-from stt_arena.providers.google import GoogleProvider
-from stt_arena.providers.openai_whisper import OpenAIWhisperProvider
-from stt_arena.providers.xai_grok import XAIGrokProvider
 
 
 def test_deepgram_requires_api_key() -> None:

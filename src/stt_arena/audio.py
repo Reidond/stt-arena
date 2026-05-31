@@ -43,6 +43,8 @@ class AudioValidationError(ValueError):
 @dataclass(frozen=True, slots=True)
 class PreparedAudio:
     wav_bytes: bytes
+    source_bytes: bytes
+    source_filename: str | None
     duration_sec: float
     mime_type: str
 
@@ -92,6 +94,8 @@ def prepare_audio(
 
     return PreparedAudio(
         wav_bytes=wav_bytes,
+        source_bytes=data,
+        source_filename=Path(filename).name if filename else None,
         duration_sec=duration_sec,
         mime_type=mime_type,
     )

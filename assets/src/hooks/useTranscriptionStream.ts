@@ -64,7 +64,7 @@ export function useTranscriptionStream() {
   );
 
   const transcribeFiles = useCallback(
-    async (files: File[], language: string) => {
+    async (files: File[], language: string, diarization: boolean) => {
       streamRef.current?.close();
       setRuns([]);
       setIsRunning(true);
@@ -78,7 +78,11 @@ export function useTranscriptionStream() {
         let sessionProviders: Array<{ id: string; display_name: string }> = [];
 
         try {
-          const session = await startProgressiveSession(file, language);
+          const session = await startProgressiveSession(
+            file,
+            language,
+            diarization,
+          );
           sessionProviders = session.providers;
 
           setRuns((current) => [
