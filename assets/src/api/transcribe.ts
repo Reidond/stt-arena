@@ -22,11 +22,15 @@ async function readErrorMessage(response: Response): Promise<string> {
 export async function startProgressiveSession(
   file: File,
   language: string,
+  diarization: boolean,
 ): Promise<ProgressiveSession> {
   const payload = new FormData();
   payload.set("file", file);
   if (language) {
     payload.set("language", language);
+  }
+  if (diarization) {
+    payload.set("diarization", "true");
   }
 
   const response = await fetch("/api/transcribe", {

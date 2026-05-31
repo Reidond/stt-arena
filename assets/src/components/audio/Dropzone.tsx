@@ -31,7 +31,7 @@ export function Dropzone({
             Drop audio files here or browse
           </p>
           <p className="mt-1 text-xs text-zinc-500">
-            WAV, MP3, WebM, OGG, M4A · max 25 MB · max 5 min each
+            WAV, MP3, WebM, OGG, M4A · max 25 MB · max 15 min each
           </p>
         </div>
         <button
