@@ -2,34 +2,48 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from google.api_core.client_options import ClientOptions
 from google.cloud import storage
 from google.cloud.speech_v2 import SpeechClient
 from google.cloud.speech_v2.types import cloud_speech
 
-from stt_arena.audio import wav_duration_sec
-from stt_arena.provider_timeouts import (
+from stt_arena_providers.audio import wav_duration_sec
+from stt_arena_providers.base import (
+    STTProvider,
+    TranscriptionResult,
+    format_speaker_turns,
+    word_count,
+)
+from stt_arena_providers.retries import (
+    exception_detail,
+    exception_message,
+    is_retryable_exception,
+)
+from stt_arena_providers.timeouts import (
     GOOGLE_SYNC_MAX_DURATION_SEC,
     google_batch_operation_timeout_sec,
 )
-from stt_arena.providers.base import STTProvider, TranscriptionResult, word_count
 
 if TYPE_CHECKING:
-    from stt_arena.config import Settings
+    from stt_arena_providers.settings import ProviderSettings
 
 SYNC_MAX_DURATION_SEC = GOOGLE_SYNC_MAX_DURATION_SEC
+logger = logging.getLogger(__name__)
 
 
 class GoogleProvider(STTProvider):
     id = "google"
     display_name = "Google Cloud STT (Chirp 3)"
+    supports_diarization = True
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: ProviderSettings) -> None:
         self._settings = settings
 
     def is_available(self) -> bool:
@@ -48,10 +62,13 @@ class GoogleProvider(STTProvider):
         audio: bytes,
         *,
         mime_type: str,
+        source_audio: bytes | None = None,
+        source_filename: str | None = None,
         language: str | None = None,
         duration_sec: float | None = None,
+        diarization: bool = False,
     ) -> TranscriptionResult:
-        del mime_type
+        del mime_type, source_audio, source_filename
         started = time.perf_counter()
 
         try:
@@ -80,6 +97,7 @@ class GoogleProvider(STTProvider):
                     auto_decoding_config=cloud_speech.AutoDetectDecodingConfig(),
                     language_codes=language_codes,
                     model=self._settings.google_speech_model,
+                    features=_recognition_features(diarization),
                 )
                 api_timeout = float(self._settings.provider_timeout_sec)
                 batch_timeout = google_batch_operation_timeout_sec(
@@ -103,8 +121,15 @@ class GoogleProvider(STTProvider):
                             ),
                         )
                         operation = client.batch_recognize(request=request)
-                        response = operation.result(timeout=batch_timeout)
-                        return _parse_batch_response(response, gcs_uri)
+                        response = cast(
+                            cloud_speech.BatchRecognizeResponse,
+                            operation.result(timeout=batch_timeout),
+                        )
+                        return _parse_batch_response(
+                            response,
+                            gcs_uri,
+                            diarization_enabled=diarization,
+                        )
                     request = cloud_speech.RecognizeRequest(
                         recognizer=recognizer,
                         config=config,
@@ -114,7 +139,10 @@ class GoogleProvider(STTProvider):
                         request=request,
                         timeout=min(60.0, api_timeout),
                     )
-                    return _parse_recognize_response(response)
+                    return _parse_recognize_response(
+                        response,
+                        diarization_enabled=diarization,
+                    )
                 finally:
                     if gcs_uri is not None:
                         _delete_gcs_blob(self._settings, gcs_uri)
@@ -134,15 +162,29 @@ class GoogleProvider(STTProvider):
             )
         except Exception as exc:
             latency_ms = int((time.perf_counter() - started) * 1000)
+            retryable = is_retryable_exception(exc)
+            logger.exception(
+                "Provider %s request failed model=%s region=%s language=%s "
+                "diarization=%s audio_bytes=%s retryable=%s detail=%s",
+                self.id,
+                self._settings.google_speech_model,
+                self._settings.google_speech_region,
+                language,
+                diarization,
+                len(audio),
+                retryable,
+                exception_detail(exc),
+            )
             return TranscriptionResult(
                 provider_id=self.id,
                 status="error",
                 latency_ms=latency_ms,
-                error=str(exc),
+                error=exception_message(exc),
+                retryable=retryable,
             )
 
 
-def _credentials_path(settings: Settings) -> Path | None:
+def _credentials_path(settings: ProviderSettings) -> Path | None:
     raw = settings.google_application_credentials
     if not raw:
         return None
@@ -158,7 +200,7 @@ def _credentials_path(settings: Settings) -> Path | None:
     return path
 
 
-def _project_id(settings: Settings) -> str:
+def _project_id(settings: ProviderSettings) -> str:
     cred_path = _credentials_path(settings)
     if cred_path is None:
         msg = "Valid Google service account JSON not configured"
@@ -171,7 +213,7 @@ def _project_id(settings: Settings) -> str:
     return project_id
 
 
-def _speech_client(settings: Settings) -> SpeechClient:
+def _speech_client(settings: ProviderSettings) -> SpeechClient:
     cred_path = _credentials_path(settings)
     if cred_path is None:
         msg = "Valid Google service account JSON not configured"
@@ -184,7 +226,17 @@ def _speech_client(settings: Settings) -> SpeechClient:
     )
 
 
-def _storage_client(settings: Settings) -> storage.Client:
+def _recognition_features(
+    diarization_enabled: bool,
+) -> cloud_speech.RecognitionFeatures | None:
+    if not diarization_enabled:
+        return None
+    return cloud_speech.RecognitionFeatures(
+        diarization_config=cloud_speech.SpeakerDiarizationConfig(),
+    )
+
+
+def _storage_client(settings: ProviderSettings) -> storage.Client:
     cred_path = _credentials_path(settings)
     if cred_path is None:
         msg = "Valid Google service account JSON not configured"
@@ -193,7 +245,7 @@ def _storage_client(settings: Settings) -> storage.Client:
     return storage.Client.from_service_account_json(str(cred_path))
 
 
-def _upload_audio_to_gcs(settings: Settings, audio: bytes) -> str:
+def _upload_audio_to_gcs(settings: ProviderSettings, audio: bytes) -> str:
     bucket_name = settings.google_storage_bucket
     if not bucket_name:
         msg = (
@@ -210,7 +262,7 @@ def _upload_audio_to_gcs(settings: Settings, audio: bytes) -> str:
     return f"gs://{bucket_name}/{blob_name}"
 
 
-def _delete_gcs_blob(settings: Settings, uri: str) -> None:
+def _delete_gcs_blob(settings: ProviderSettings, uri: str) -> None:
     if not uri.startswith("gs://"):
         return
 
@@ -219,12 +271,23 @@ def _delete_gcs_blob(settings: Settings, uri: str) -> None:
         client = _storage_client(settings)
         client.bucket(bucket_name).blob(blob_name).delete()
     except Exception:
+        logger.warning(
+            "Provider google failed to delete temporary GCS audio",
+            exc_info=True,
+        )
         return
 
 
 def _parse_recognize_response(
     response: cloud_speech.RecognizeResponse | cloud_speech.BatchRecognizeResults,
+    *,
+    diarization_enabled: bool = False,
 ) -> tuple[str, float | None]:
+    if diarization_enabled:
+        diarized_text = _format_diarized_google_results(response.results)
+        if diarized_text:
+            return diarized_text, None
+
     parts: list[str] = []
     for result in response.results:
         if not result.alternatives:
@@ -236,6 +299,56 @@ def _parse_recognize_response(
     text = " ".join(parts).strip()
     # Chirp 3 always returns confidence=0.0; Google docs say it is not meaningful.
     return text, None
+
+
+def _format_diarized_google_results(
+    results: Iterable[cloud_speech.SpeechRecognitionResult],
+) -> str:
+    word_groups = []
+    for result in results:
+        if not result.alternatives:
+            continue
+        words = [
+            word
+            for word in result.alternatives[0].words
+            if word.word and word.speaker_label
+        ]
+        if words:
+            word_groups.append(words)
+
+    if not word_groups:
+        return ""
+
+    words = _resolve_google_diarization_words(word_groups)
+    turns: list[tuple[object, str]] = []
+    current_label = ""
+    current_words: list[str] = []
+    for word in words:
+        if word.speaker_label != current_label and current_words:
+            turns.append((current_label, " ".join(current_words)))
+            current_words = []
+        current_label = word.speaker_label
+        current_words.append(word.word)
+    if current_words:
+        turns.append((current_label, " ".join(current_words)))
+
+    return format_speaker_turns(turns)
+
+
+def _resolve_google_diarization_words(
+    word_groups: list[list[cloud_speech.WordInfo]],
+) -> list[cloud_speech.WordInfo]:
+    if len(word_groups) == 1:
+        return word_groups[0]
+
+    longest = max(word_groups, key=len)
+    first_group = word_groups[0]
+    longest_prefix = [word.word for word in longest[: len(first_group)]]
+    first_words = [word.word for word in first_group]
+    if longest_prefix == first_words:
+        return longest
+
+    return [word for group in word_groups for word in group]
 
 
 def _batch_file_error_message(
@@ -279,6 +392,8 @@ def _lookup_batch_file_result(
 def _parse_batch_response(
     response: cloud_speech.BatchRecognizeResponse,
     audio_uri: str,
+    *,
+    diarization_enabled: bool = False,
 ) -> tuple[str, float | None]:
     file_result = _lookup_batch_file_result(response, audio_uri)
     error_message = _batch_file_error_message(file_result)
@@ -290,4 +405,7 @@ def _parse_batch_response(
         msg = "Google batch returned no transcript payload"
         raise RuntimeError(msg)
 
-    return _parse_recognize_response(transcript)
+    return _parse_recognize_response(
+        transcript,
+        diarization_enabled=diarization_enabled,
+    )

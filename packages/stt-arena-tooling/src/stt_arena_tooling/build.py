@@ -1,10 +1,10 @@
 """Build production assets."""
 
-from stt_arena.assets_util import build_assets
+from stt_arena_tooling.project import VITE_ASSETS
 
 
 def main() -> None:
-    build_assets()
+    VITE_ASSETS.build()
 
 
 if __name__ == "__main__":

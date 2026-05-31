@@ -6,6 +6,14 @@ resolution-markers = [
     "python_full_version < '3.14'",
 ]
 
+[manifest]
+members = [
+    "stt-arena",
+    "stt-arena-providers",
+    "stt-arena-tooling",
+    "stt-arena-vite",
+]
+
 [[package]]
 name = "annotated-doc"
 version = "0.0.4"
@@ -1171,14 +1179,13 @@ name = "stt-arena"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "deepgram-sdk" },
     { name = "fastapi", extra = ["standard"] },
-    { name = "google-cloud-speech" },
-    { name = "google-cloud-storage" },
     { name = "httpx" },
     { name = "jinja2" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
+    { name = "stt-arena-providers" },
+    { name = "stt-arena-vite" },
     { name = "uvicorn" },
 ]
 
@@ -1188,18 +1195,18 @@ dev = [
     { name = "httpx" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "stt-arena-tooling" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "deepgram-sdk", specifier = ">=7.2.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.136.3" },
-    { name = "google-cloud-speech", specifier = ">=2.39.0" },
-    { name = "google-cloud-storage", specifier = ">=3.1.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "pydantic-settings", specifier = ">=2.14.1" },
     { name = "python-multipart", specifier = ">=0.0.29" },
+    { name = "stt-arena-providers", editable = "packages/stt-arena-providers" },
+    { name = "stt-arena-vite", editable = "packages/stt-arena-vite" },
     { name = "uvicorn", specifier = ">=0.48.0" },
 ]
 
@@ -1209,6 +1216,64 @@ dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "ruff", specifier = ">=0.15.14" },
+    { name = "stt-arena-tooling", editable = "packages/stt-arena-tooling" },
+]
+
+[[package]]
+name = "stt-arena-providers"
+version = "0.1.0"
+source = { editable = "packages/stt-arena-providers" }
+dependencies = [
+    { name = "deepgram-sdk" },
+    { name = "google-cloud-speech" },
+    { name = "google-cloud-storage" },
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "deepgram-sdk", specifier = ">=7.2.0" },
+    { name = "google-cloud-speech", specifier = ">=2.39.0" },
+    { name = "google-cloud-storage", specifier = ">=3.1.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pydantic", specifier = ">=2.12.5" },
+]
+
+[[package]]
+name = "stt-arena-tooling"
+version = "0.1.0"
+source = { editable = "packages/stt-arena-tooling" }
+dependencies = [
+    { name = "pydantic-settings" },
+    { name = "stt-arena-vite" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pydantic-settings", specifier = ">=2.14.1" },
+    { name = "stt-arena-vite", editable = "packages/stt-arena-vite" },
+    { name = "uvicorn", specifier = ">=0.48.0" },
+]
+
+[[package]]
+name = "stt-arena-vite"
+version = "0.1.0"
+source = { editable = "packages/stt-arena-vite" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "pydantic-settings" },
+    { name = "websockets" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.136.3" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "pydantic-settings", specifier = ">=2.14.1" },
+    { name = "websockets", specifier = ">=16.0" },
 ]
 
 [[package]]

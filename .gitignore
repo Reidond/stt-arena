@@ -15,6 +15,9 @@ assets/node_modules/
 # Vite build output
 src/stt_arena/static/dist/
 
+# Runtime logs
+logs/
+
 # Environment
 .env
 /gcloud-service-key.json

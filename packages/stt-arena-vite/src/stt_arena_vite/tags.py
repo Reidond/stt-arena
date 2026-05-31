@@ -3,10 +3,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
-from stt_arena.assets_util import MANIFEST_PATH
-from stt_arena.config import Settings
+from stt_arena_vite.settings import ViteSettings
 
 ENTRY_KEY = "src/main.tsx"
 
@@ -17,15 +17,14 @@ class HtmlTag:
     attrs: dict[str, str]
 
 
-def vite_tags(settings: Settings) -> list[HtmlTag]:
+def vite_tags(settings: ViteSettings, *, manifest_path: Path) -> list[HtmlTag]:
     if settings.is_dev:
-        origin = settings.vite_origin
         return [
-            HtmlTag("script", {"type": "module", "src": f"{origin}/@vite/client"}),
-            HtmlTag("script", {"type": "module", "src": f"{origin}/src/main.tsx"}),
+            HtmlTag("script", {"type": "module", "src": "/@vite/client"}),
+            HtmlTag("script", {"type": "module", "src": "/src/main.tsx"}),
         ]
 
-    manifest = _load_manifest()
+    manifest = _load_manifest(manifest_path)
     entry = manifest.get(ENTRY_KEY)
     if entry is None:
         msg = (
@@ -49,11 +48,8 @@ def vite_tags(settings: Settings) -> list[HtmlTag]:
 
 
 @lru_cache
-def _load_manifest() -> dict[str, Any]:
-    if not MANIFEST_PATH.is_file():
-        msg = (
-            f"Vite manifest not found at {MANIFEST_PATH}. "
-            "Run `uv run build` first."
-        )
+def _load_manifest(manifest_path: Path) -> dict[str, Any]:
+    if not manifest_path.is_file():
+        msg = f"Vite manifest not found at {manifest_path}. Run `uv run build` first."
         raise RuntimeError(msg)
-    return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    return json.loads(manifest_path.read_text(encoding="utf-8"))

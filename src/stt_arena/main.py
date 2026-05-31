@@ -1,5 +1,7 @@
 import json
+import logging
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -7,32 +9,45 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from stt_arena_providers import NoProvidersError, ProviderService
+from stt_arena_vite import (
+    register_vite_dev_proxy,
+    start_vite_dev_proxy,
+    stop_vite_dev_proxy,
+    vite_tags,
+)
 
 from stt_arena.audio import AudioValidationError, prepare_audio
-from stt_arena.config import Settings, get_settings
-from stt_arena.cost import billing_summary, estimate_transcription_cost
-from stt_arena.languages import list_language_options, resolve_canonical_language
-from stt_arena.providers import available_providers, list_provider_statuses
+from stt_arena.config import get_settings
+from stt_arena.logging_config import configure_logging
 from stt_arena.sessions import TranscriptionSession, create_session, take_session
-from stt_arena.transcribe import (
-    NoProvidersError,
-    transcribe_all,
-    transcribe_as_completed,
-)
-from stt_arena.vite import vite_tags
-from stt_arena.vite_proxy import register_vite_dev_proxy
 
 PACKAGE_DIR = Path(__file__).resolve().parent
+VITE_MANIFEST_PATH = PACKAGE_DIR / "static" / "dist" / ".vite" / "manifest.json"
 TEMPLATES = Jinja2Templates(directory=str(PACKAGE_DIR / "templates"))
+logger = logging.getLogger(__name__)
 
-app = FastAPI(title="STT Arena", version="0.1.0")
 
-if (PACKAGE_DIR / "static" / "dist").is_dir():
-    app.mount(
-        "/static",
-        StaticFiles(directory=str(PACKAGE_DIR / "static")),
-        name="static",
-    )
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = get_settings()
+    log_path = configure_logging(settings)
+    logger.info("STT Arena starting; logs=%s", log_path)
+    await start_vite_dev_proxy(app, settings)
+    try:
+        yield
+    finally:
+        await stop_vite_dev_proxy(app)
+        logger.info("STT Arena shutting down")
+
+
+app = FastAPI(title="STT Arena", version="0.1.0", lifespan=lifespan)
+
+app.mount(
+    "/static",
+    StaticFiles(directory=str(PACKAGE_DIR / "static")),
+    name="static",
+)
 
 
 class TranscribeResponse(BaseModel):
@@ -40,39 +55,15 @@ class TranscribeResponse(BaseModel):
     results: list[dict[str, object]]
 
 
-def _wants_html(request: Request) -> bool:
-    return request.headers.get("HX-Request") == "true"
-
-
-def _wants_json(request: Request) -> bool:
-    accept = request.headers.get("Accept", "")
-    if "application/json" in accept:
-        return True
-    if "text/html" in accept:
-        return False
-    return True
-
-
 def _wants_progressive(request: Request) -> bool:
     return request.headers.get("X-Progressive") == "1"
-
-
-def _display_names(settings: Settings) -> dict[str, str]:
-    return {
-        item.id: item.display_name for item in list_provider_statuses(settings)
-    }
-
-
-def _render_partial(name: str, **context: object) -> str:
-    template = TEMPLATES.env.get_template(name)
-    return template.render(**context)
 
 
 def _enrich_result(
     result: dict[str, object],
     display_names: dict[str, str],
     *,
-    settings: Settings,
+    providers: ProviderService,
     duration_sec: float | None = None,
 ) -> dict[str, object]:
     provider_id = str(result["provider_id"])
@@ -81,10 +72,9 @@ def _enrich_result(
         "display_name": display_names.get(provider_id, provider_id),
     }
     if duration_sec is not None and result.get("status") == "ok":
-        cost = estimate_transcription_cost(
+        cost = providers.estimate_cost(
             provider_id,
             duration_sec,
-            settings=settings,
         )
         if cost is not None:
             enriched["cost"] = cost.model_dump()
@@ -104,6 +94,12 @@ async def _prepare_upload(
     data = await file.read()
     max_bytes = max_upload_mb * 1024 * 1024
     if len(data) > max_bytes:
+        logger.warning(
+            "Rejected upload %s: %s bytes exceeds %s MB",
+            file.filename,
+            len(data),
+            max_upload_mb,
+        )
         raise HTTPException(
             status_code=413,
             detail=f"File exceeds {max_upload_mb} MB limit",
@@ -118,75 +114,40 @@ async def _prepare_upload(
             max_duration_sec=max_duration_sec,
         )
     except AudioValidationError as exc:
+        logger.warning("Rejected upload %s: %s", file.filename, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/")
 async def index(request: Request):
     settings = get_settings()
-    page_url = str(request.url.replace(query=""))
-    social_image_url = str(request.url_for("static", path="og.svg"))
     return TEMPLATES.TemplateResponse(
         request,
         "index.html",
         {
-            "vite_tags": vite_tags(settings),
+            "vite_tags": vite_tags(settings, manifest_path=VITE_MANIFEST_PATH),
             "is_dev": settings.is_dev,
-            "vite_origin": settings.vite_origin,
-            "page_url": page_url,
-            "social_image_url": social_image_url,
         },
     )
 
 
 @app.get("/api/languages")
 async def list_languages():
-    return {"languages": list_language_options()}
+    providers = ProviderService(get_settings())
+    return {"languages": providers.language_options()}
 
 
 @app.get("/api/providers")
-async def list_providers(request: Request):
+async def list_providers():
     settings = get_settings()
-    providers = []
-    for item in list_provider_statuses(settings):
-        payload = item.model_dump()
-        if item.enabled:
-            payload["billing"] = billing_summary(item.id, settings)
-        providers.append(payload)
-
-    if _wants_html(request):
-        return TEMPLATES.TemplateResponse(
-            request,
-            "partials/providers.html",
-            {"providers": providers},
-        )
-
+    providers = ProviderService(settings).status_payloads()
     return {"providers": providers}
 
 
 @app.get("/api/billing/plans")
 async def list_billing_plans():
-    from stt_arena.cost import BILLING_PLANS
-
-    settings = get_settings()
-    plans = []
-    for plan in BILLING_PLANS.values():
-        plans.append(
-            {
-                "id": plan.id,
-                "provider_id": plan.provider_id,
-                "label": plan.label,
-                "model": plan.model,
-                "billing_mode": plan.billing_mode,
-                "usd_per_minute": plan.usd_per_minute,
-                "free_minutes_monthly": plan.free_minutes_monthly,
-                "pricing_url": plan.pricing_url,
-                "notes": plan.notes,
-                "active_for_provider": settings.billing_plan_for(plan.provider_id)
-                == plan.id,
-            }
-        )
-    return {"plans": plans}
+    providers = ProviderService(get_settings())
+    return {"plans": providers.billing_plan_payloads()}
 
 
 @app.post("/api/transcribe")
@@ -194,10 +155,12 @@ async def transcribe(
     request: Request,
     file: UploadFile | None = File(default=None),
     language: str | None = Form(default=None),
+    diarization: bool = Form(default=False),
 ):
     settings = get_settings()
+    provider_service = ProviderService(settings)
     try:
-        canonical_language = resolve_canonical_language(language)
+        canonical_language = provider_service.resolve_language(language)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -208,8 +171,9 @@ async def transcribe(
     )
 
     if _wants_progressive(request):
-        providers = available_providers(settings)
+        providers = provider_service.available()
         if not providers:
+            logger.warning("Transcription rejected: no providers available")
             raise HTTPException(
                 status_code=503,
                 detail="No enabled providers are available",
@@ -218,69 +182,51 @@ async def transcribe(
         session_id = create_session(
             TranscriptionSession(
                 wav_bytes=prepared.wav_bytes,
+                source_bytes=prepared.source_bytes,
+                source_filename=prepared.source_filename,
                 mime_type=prepared.mime_type,
                 language=canonical_language,
+                diarization=diarization,
                 duration_sec=prepared.duration_sec,
                 provider_ids=tuple(provider.id for provider in providers),
             )
         )
-        display_names = _display_names(settings)
+        display_names = provider_service.display_names()
         pending_providers = [
             {"id": provider.id, "display_name": display_names[provider.id]}
             for provider in providers
         ]
+        logger.info(
+            "Created transcription session %s for %.1fs audio with providers=%s",
+            session_id,
+            prepared.duration_sec,
+            ",".join(provider.id for provider in providers),
+        )
         progressive_payload = {
             "session_id": session_id,
             "audio_duration_sec": round(prepared.duration_sec, 1),
             "providers": pending_providers,
         }
-        if _wants_json(request):
-            return JSONResponse(content=progressive_payload)
-        return TEMPLATES.TemplateResponse(
-            request,
-            "partials/results_pending.html",
-            {
-                "audio_duration_sec": progressive_payload["audio_duration_sec"],
-                "providers": pending_providers,
-                "session_id": session_id,
-            },
-        )
+        return JSONResponse(content=progressive_payload)
 
     try:
-        results = await transcribe_all(
-            settings,
+        results = await provider_service.transcribe_all(
             prepared.wav_bytes,
             mime_type=prepared.mime_type,
+            source_audio=prepared.source_bytes,
+            source_filename=prepared.source_filename,
             language=canonical_language,
             duration_sec=prepared.duration_sec,
+            diarization=diarization,
         )
     except NoProvidersError as exc:
+        logger.warning("Transcription rejected: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     payload = TranscribeResponse(
         audio_duration_sec=round(prepared.duration_sec, 1),
         results=[result.model_dump() for result in results],
     )
-
-    if _wants_html(request):
-        display_names = _display_names(settings)
-        enriched = [
-            _enrich_result(
-                result,
-                display_names,
-                settings=settings,
-                duration_sec=prepared.duration_sec,
-            )
-            for result in payload.results
-        ]
-        return TEMPLATES.TemplateResponse(
-            request,
-            "partials/results.html",
-            {
-                "audio_duration_sec": payload.audio_duration_sec,
-                "results": enriched,
-            },
-        )
 
     return JSONResponse(content=payload.model_dump())
 
@@ -292,21 +238,24 @@ async def transcribe_events(session_id: str) -> StreamingResponse:
         raise HTTPException(status_code=404, detail="Transcription session not found")
 
     settings = get_settings()
-    display_names = _display_names(settings)
+    provider_service = ProviderService(settings)
+    display_names = provider_service.display_names()
 
     async def event_stream() -> AsyncIterator[str]:
         try:
-            async for result in transcribe_as_completed(
-                settings,
+            async for result in provider_service.transcribe_as_completed(
                 session.wav_bytes,
                 mime_type=session.mime_type,
+                source_audio=session.source_bytes,
+                source_filename=session.source_filename,
                 language=session.language,
                 duration_sec=session.duration_sec,
+                diarization=session.diarization,
             ):
                 enriched = _enrich_result(
                     result.model_dump(),
                     display_names,
-                    settings=settings,
+                    providers=provider_service,
                     duration_sec=session.duration_sec,
                 )
                 payload = json.dumps(
@@ -318,6 +267,7 @@ async def transcribe_events(session_id: str) -> StreamingResponse:
                 )
                 yield f"event: result\ndata: {payload}\n\n"
         except Exception as exc:
+            logger.exception("Transcription session %s failed", session_id)
             payload = json.dumps({"message": str(exc)}, ensure_ascii=False)
             yield f"event: error\ndata: {payload}\n\n"
         done_payload = json.dumps(
@@ -337,4 +287,4 @@ async def transcribe_events(session_id: str) -> StreamingResponse:
     )
 
 
-register_vite_dev_proxy(app)
+register_vite_dev_proxy(app, get_settings)

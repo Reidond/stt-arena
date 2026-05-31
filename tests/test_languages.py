@@ -1,6 +1,5 @@
 import pytest
-
-from stt_arena.languages import (
+from stt_arena_providers.languages import (
     language_for_provider,
     list_language_options,
     provider_language_map,

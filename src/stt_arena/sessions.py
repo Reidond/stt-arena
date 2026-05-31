@@ -7,8 +7,11 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class TranscriptionSession:
     wav_bytes: bytes
+    source_bytes: bytes
+    source_filename: str | None
     mime_type: str
     language: str | None
+    diarization: bool
     duration_sec: float
     provider_ids: tuple[str, ...]
 

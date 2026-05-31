@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from stt_arena.config import Settings
+    from stt_arena_providers.settings import ProviderSettings
 
 
 class DurationRounding(StrEnum):
@@ -195,6 +195,10 @@ DEFAULT_PLAN_BY_PROVIDER: dict[str, str] = {
 }
 
 
+def default_billing_plan(provider_id: str) -> str:
+    return DEFAULT_PLAN_BY_PROVIDER[provider_id]
+
+
 class CostBreakdown(BaseModel):
     usd: float
     plan_id: str
@@ -218,7 +222,7 @@ def list_plans_for_provider(provider_id: str) -> list[BillingPlan]:
     ]
 
 
-def resolve_billing_plan(provider_id: str, settings: Settings) -> BillingPlan:
+def resolve_billing_plan(provider_id: str, settings: ProviderSettings) -> BillingPlan:
     plan_id = settings.billing_plan_for(provider_id)
     plan = BILLING_PLANS.get(plan_id)
     if plan is None:
@@ -233,7 +237,10 @@ def resolve_billing_plan(provider_id: str, settings: Settings) -> BillingPlan:
     return plan
 
 
-def billing_summary(provider_id: str, settings: Settings) -> dict[str, object]:
+def billing_summary(
+    provider_id: str,
+    settings: ProviderSettings,
+) -> dict[str, object]:
     plan = resolve_billing_plan(provider_id, settings)
     monthly_used = settings.billing_monthly_minutes_used_for(provider_id)
     rate = plan.rate_for_monthly_minutes(monthly_used)
@@ -265,7 +272,7 @@ def estimate_transcription_cost(
     provider_id: str,
     duration_sec: float,
     *,
-    settings: Settings,
+    settings: ProviderSettings,
 ) -> CostBreakdown | None:
     if provider_id not in DEFAULT_PLAN_BY_PROVIDER:
         return None
@@ -302,13 +309,9 @@ def estimate_cost_usd(
     provider_id: str,
     duration_sec: float,
     *,
-    settings: Settings | None = None,
+    settings: ProviderSettings,
 ) -> float | None:
     """Backward-compatible helper returning USD only."""
-    if settings is None:
-        from stt_arena.config import get_settings
-
-        settings = get_settings()
     breakdown = estimate_transcription_cost(
         provider_id,
         duration_sec,

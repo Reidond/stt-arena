@@ -1,10 +1,10 @@
 import pytest
-
-from stt_arena.config import Settings
-from stt_arena.cost import (
+from stt_arena_providers.billing import (
     estimate_transcription_cost,
     resolve_billing_plan,
 )
+
+from stt_arena.config import Settings
 
 
 def test_openai_gpt4o_transcribe_rounds_to_nearest_second() -> None:

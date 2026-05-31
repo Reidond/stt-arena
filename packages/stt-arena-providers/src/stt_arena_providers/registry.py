@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
-from stt_arena.config import Settings
-from stt_arena.providers.base import ProviderStatus, STTProvider
-from stt_arena.providers.deepgram import DeepgramProvider
-from stt_arena.providers.google import GoogleProvider
-from stt_arena.providers.openai_whisper import OpenAIWhisperProvider
-from stt_arena.providers.xai_grok import XAIGrokProvider
+from stt_arena_providers.base import ProviderStatus, STTProvider
+from stt_arena_providers.providers.deepgram import DeepgramProvider
+from stt_arena_providers.providers.google import GoogleProvider
+from stt_arena_providers.providers.openai_whisper import OpenAIWhisperProvider
+from stt_arena_providers.providers.xai_grok import XAIGrokProvider
+from stt_arena_providers.settings import ProviderSettings
 
-ProviderFactory = Callable[[Settings], STTProvider]
+ProviderFactory = Callable[[ProviderSettings], STTProvider]
+logger = logging.getLogger(__name__)
 
 PROVIDER_CLASSES: dict[str, ProviderFactory] = {
     DeepgramProvider.id: DeepgramProvider,
@@ -19,7 +21,7 @@ PROVIDER_CLASSES: dict[str, ProviderFactory] = {
 }
 
 
-def list_provider_statuses(settings: Settings) -> list[ProviderStatus]:
+def list_provider_statuses(settings: ProviderSettings) -> list[ProviderStatus]:
     statuses: list[ProviderStatus] = []
     seen: set[str] = set()
 
@@ -39,13 +41,20 @@ def list_provider_statuses(settings: Settings) -> list[ProviderStatus]:
     return statuses
 
 
-def available_providers(settings: Settings) -> list[STTProvider]:
+def available_providers(settings: ProviderSettings) -> list[STTProvider]:
     providers: list[STTProvider] = []
     for provider_id in settings.enabled_provider_ids:
         cls = PROVIDER_CLASSES.get(provider_id)
         if cls is None:
+            logger.error("Unknown enabled provider id=%s", provider_id)
             continue
         provider = cls(settings)
         if provider.is_available():
             providers.append(provider)
+        else:
+            logger.error(
+                "Enabled provider %s is unavailable: %s",
+                provider.id,
+                provider.unavailable_reason(),
+            )
     return providers
