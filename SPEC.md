@@ -12,7 +12,7 @@
 
 ## MVP
 
-> Upload a single audio file (WAV/MP3/WebM, ≤25 MB, ≤5 min), transcribe in parallel across all enabled providers, display results in a masonry grid with text, latency, and per-provider errors. No persistence. Runs locally via `uv run`.
+> Upload a single audio file (WAV/MP3/WebM, ≤25 MB, ≤15 min), transcribe in parallel across all enabled providers, display results in a masonry grid with text, latency, and per-provider errors. No persistence. Runs locally via `uv run`.
 
 ### In scope (v1)
 
@@ -62,7 +62,7 @@
 - Drag-and-drop, file picker, or browser microphone recording
 - Multiple files per run (processed sequentially)
 - Waveform preview for the selected clip
-- Max file size: 25 MB; max duration: 5 minutes (validated server-side)
+- Max file size: 25 MB; max duration: 15 minutes (validated server-side)
 
 ### Audio input (future)
 
@@ -116,7 +116,7 @@
 Browser
   ├── Jinja2 shell (FastAPI :8000) — mounts React SPA at #root
   └── Vite + React SPA (Tailwind CSS, shadcn/ui components)
-        ├── dev:  Vite :5173 with HMR
+        ├── dev:  FastAPI proxies Vite over a Unix socket with HMR
         └── prod: built to static/dist/
         │
         ▼
@@ -124,14 +124,16 @@ FastAPI (main.py)
         │
         ├── config.py          ← Pydantic Settings
         ├── audio.py           ← decode/normalize (shared preprocessor)
-        ├── transcribe.py      ← parallel fan-out + timeouts
         ├── sessions.py        ← in-memory SSE session store
-        └── providers/
-                ├── base.py
-                ├── deepgram.py
-                ├── google.py    ← GCS upload for audio > ~59s
-                ├── openai_whisper.py
-                └── xai_grok.py
+        └── ProviderService    ← stt-arena-providers facade
+                ├── providers/
+                │     ├── deepgram.py
+                │     ├── google.py    ← GCS upload for audio > ~59s
+                │     ├── openai_whisper.py
+                │     └── xai_grok.py
+                ├── orchestration.py   ← parallel fan-out + timeouts
+                ├── languages.py       ← provider code normalization
+                └── billing.py         ← plans + cost estimates
                         │
                         └── asyncio → per-provider transcribe()
 ```
@@ -171,6 +173,7 @@ class STTProvider(ABC):
         *,
         mime_type: str,
         language: str | None = None,
+        diarization: bool = False,
     ) -> TranscriptionResult:
         """Transcribe normalized WAV bytes. Must not raise; return status=error instead."""
 ```
@@ -181,7 +184,7 @@ class STTProvider(ABC):
 
 ### `GET /`
 
-Main masonry UI (Jinja2 template).
+Minimal Jinja2 shell that mounts the React SPA at `#root`.
 
 ### `GET /api/providers`
 
@@ -246,6 +249,7 @@ Upload audio and transcribe with all enabled, available providers.
 |------------|--------|----------|--------------------------------|
 | `file`     | file   | Yes      | WAV, MP3, WebM, OGG, M4A         |
 | `language` | string | No       | BCP-47 or ISO 639-1 (e.g. `en`) |
+| `diarization` | boolean | No | Enables speaker labels where the provider supports diarization |
 
 **Response `200`:**
 
@@ -292,7 +296,7 @@ Upload audio and transcribe with all enabled, available providers.
 
 Per-provider timeouts do not fail the whole request; they appear as `status: "error"` on that provider's result.
 
-**Progressive UI:** With `X-Progressive: 1`, the POST returns loading cards immediately; results stream via SSE at `GET /api/transcribe/sessions/{session_id}/events`.
+**Progressive UI:** With `X-Progressive: 1`, the POST returns a JSON session payload immediately. React renders loading cards, then receives results via SSE at `GET /api/transcribe/sessions/{session_id}/events`.
 
 ### `GET /api/transcribe/sessions/{session_id}/events`
 
@@ -302,7 +306,7 @@ Server-Sent Events stream for a transcription session created by progressive `PO
 
 | Event | Payload | When |
 |-------|---------|------|
-| `result` | `{"provider_id": "...", "html": "...", "result": {...}}` | One provider finished |
+| `result` | `{"provider_id": "...", "result": {...}}` | One provider finished |
 | `error` | `{"message": "..."}` | Stream-level failure |
 | `done` | `{"audio_duration_sec": 10.2}` | All providers finished |
 
@@ -318,9 +322,16 @@ Copy `.env.example` to `.env`. All settings load via Pydantic Settings.
 | `HOST`                        | `127.0.0.1`              | Bind address (local only by default)             |
 | `PORT`                        | `8000`                   | Server port                                      |
 | `MAX_UPLOAD_MB`               | `25`                     | Max upload size                                  |
-| `MAX_AUDIO_DURATION_SEC`      | `300`                    | Max audio duration                               |
+| `MAX_AUDIO_DURATION_SEC`      | `900`                    | Max audio duration                               |
 | `PROVIDER_TIMEOUT_SEC`        | `120`                    | Per-provider timeout                             |
+| `PROVIDER_MAX_ATTEMPTS`       | `3`                      | Max attempts for transient provider failures     |
+| `PROVIDER_RETRY_BASE_DELAY_SEC` | `1.0`                  | Initial exponential-backoff delay                 |
+| `PROVIDER_RETRY_MAX_DELAY_SEC` | `8.0`                   | Maximum delay between provider attempts           |
+| `LOG_LEVEL`                   | `INFO`                   | Python logging level                             |
+| `LOG_DIR`                     | `logs`                   | Runtime log directory                            |
+| `LOG_FILE`                    | `stt-arena.log`          | Runtime log filename                             |
 | `OPENAI_TRANSCRIBE_MODEL`     | `gpt-4o-transcribe`      | OpenAI transcription model                       |
+| `OPENAI_DIARIZE_MODEL`        | `gpt-4o-transcribe-diarize` | OpenAI speaker diarization model               |
 | `DEEPGRAM_MODEL`              | `nova-3`                 | Deepgram model                                   |
 | `GOOGLE_SPEECH_MODEL`         | `chirp_3`                | Google Speech-to-Text v2 model                   |
 | `GOOGLE_SPEECH_REGION`        | `us`                     | Google STT region (`us`, `eu`, …)                |
@@ -373,10 +384,10 @@ FastAPI serves a minimal Jinja2 shell with a `#root` mount point. Vite bundles a
 
 | Mode | HTML | Assets |
 |------|------|--------|
-| **Dev** (`uv run dev`) | FastAPI `:8000` | Vite `:5173` with HMR via `@vite/client` |
+| **Dev** (`uv run dev`) | FastAPI `:8000` | Vite over a Unix socket with HMR via `@vite/client` |
 | **Prod** | FastAPI | `assets/` → `uv run build` → `static/dist/` + `manifest.json` |
 
-Progressive transcription uses JSON session responses plus SSE result events (structured `result` payloads). HTML partials remain for backward-compatible API clients.
+Progressive transcription uses JSON session responses plus SSE result events with structured `result` payloads.
 
 **Commands:**
 
@@ -406,28 +417,17 @@ stt-arena/
 ├── src/stt_arena/
 │   ├── __init__.py
 │   ├── main.py                 # FastAPI app entrypoint
-│   ├── dev.py                  # `uv run dev` orchestrator
-│   ├── build.py                # `uv run build` production asset build
-│   ├── start.py                # `uv run start` production server
-│   ├── assets_util.py          # Shared npm/Vite helpers
 │   ├── config.py               # Pydantic Settings
-│   ├── vite.py                 # Dev/prod asset URL helper
 │   ├── audio.py                # Decode, validate, normalize audio
-│   ├── cost.py                 # Billing plans and cost calculation
-│   ├── transcribe.py           # Parallel fan-out orchestration
 │   ├── sessions.py             # In-memory SSE transcription sessions
-│   ├── providers/
-│   │   ├── __init__.py         # Provider registry
-│   │   ├── base.py             # Abstract base class + TranscriptionResult
-│   │   ├── deepgram.py
-│   │   ├── google.py
-│   │   ├── openai_whisper.py
-│   │   └── xai_grok.py
 │   ├── templates/
-│   │   ├── index.html          # Main UI
-│   │   └── partials/           # Provider panel, result cards, SSE shell
+│   │   └── index.html          # Minimal shell for the React SPA
 │   └── static/
 │       └── dist/               # Vite build output (gitignored)
+├── packages/
+│   ├── stt-arena-providers/    # ProviderService, adapters, billing, languages
+│   ├── stt-arena-vite/         # Python-side Vite settings, tags, proxy, assets
+│   └── stt-arena-tooling/      # `uv run dev`, `build`, and `start` commands
 ├── tests/
 │   ├── test_config.py
 │   ├── test_audio.py
@@ -452,7 +452,8 @@ uv sync
 uv run dev
 ```
 
-Open http://127.0.0.1:8000 — Vite HMR runs automatically on port 5173.
+Open http://127.0.0.1:8000 — Vite HMR runs automatically through FastAPI over
+a Unix socket in the system temp directory.
 
 **Production:**
 
@@ -475,6 +476,7 @@ uv run start
 
 - Providers run in parallel; total wall time ≈ slowest provider (not sum)
 - Per-provider timeout: `PROVIDER_TIMEOUT_SEC` (default 120s)
+- Transient provider failures retry with bounded exponential backoff
 - Latency displayed per card so users can compare providers directly
 - Local Whisper on CPU may exceed cloud latency for longer clips — acceptable
 
@@ -482,6 +484,7 @@ uv run start
 
 - One provider failing must not fail the request or other providers
 - Timeouts and exceptions become `status: "error"` on that provider's result
+- Provider failures log safe request context, per-attempt details, and stack traces
 
 ### UI
 
@@ -503,7 +506,7 @@ uv run start
 - [x] Upload MP3/WebM → server normalizes and transcribes successfully
 - [x] One provider misconfigured or failing → other providers still return; failed card shows error
 - [x] Provider with missing API key → listed as `available: false` in `/api/providers`; excluded from transcribe
-- [x] File > 25 MB or > 5 min → `400`/`413` with clear message
+- [x] File > 25 MB or > 15 min → `400`/`413` with clear message
 - [x] No audio files remain on disk after request completes (ffmpeg temps and GCS objects cleaned up)
 - [x] Drag-and-drop, microphone recording, batch upload, waveform preview, and CSV/JSON export
 
