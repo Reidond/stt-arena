@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { errorHint } from "@/lib/diff";
 import { formatLatency, providerInitials } from "@/lib/format";
-import { getResultCost } from "@/lib/export";
+import { copyText as writeClipboardText, getResultCost } from "@/lib/export";
 
 type ResultCardProps = {
   result?: TranscriptionResult;
@@ -60,9 +60,10 @@ export function ResultCard({
     if (!text) {
       return;
     }
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    if (await writeClipboardText(text)) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }
   };
 
   return (

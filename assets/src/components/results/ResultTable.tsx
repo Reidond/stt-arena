@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatLatency, providerInitials } from "@/lib/format";
-import { getResultCost } from "@/lib/export";
+import { copyText as writeClipboardText, getResultCost } from "@/lib/export";
 
 const COLUMN_COUNT = 6;
 
@@ -95,9 +95,10 @@ function TranscriptDetailPanel({
     if (!content) {
       return;
     }
-    await navigator.clipboard.writeText(content);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    if (await writeClipboardText(content)) {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }
   };
 
   if (!content) {

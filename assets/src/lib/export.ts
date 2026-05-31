@@ -5,8 +5,11 @@ function downloadBlob(filename: string, blob: Blob): void {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  link.style.display = "none";
+  document.body.append(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function csvEscape(value: string): string {
@@ -16,15 +19,18 @@ function csvEscape(value: string): string {
   return value;
 }
 
+export function jsonExportBody(payload: ExportPayload): string {
+  return JSON.stringify(payload, null, 2);
+}
+
 export function downloadJson(payload: ExportPayload): void {
-  const body = JSON.stringify(payload, null, 2);
   downloadBlob(
     `stt-arena-${Date.now()}.json`,
-    new Blob([body], { type: "application/json" }),
+    new Blob([jsonExportBody(payload)], { type: "application/json" }),
   );
 }
 
-export function downloadCsv(payload: ExportPayload): void {
+export function csvExportBody(payload: ExportPayload): string {
   const headers = [
     "provider_id",
     "display_name",
@@ -57,15 +63,38 @@ export function downloadCsv(payload: ExportPayload): void {
       .map((cell) => csvEscape(String(cell)))
       .join(","),
   );
-  const body = [headers.join(","), ...rows].join("\n");
+  return [headers.join(","), ...rows].join("\n");
+}
+
+export function downloadCsv(payload: ExportPayload): void {
   downloadBlob(
     `stt-arena-${Date.now()}.csv`,
-    new Blob([body], { type: "text/csv" }),
+    new Blob([csvExportBody(payload)], { type: "text/csv" }),
   );
 }
 
-export async function copyJson(payload: ExportPayload): Promise<void> {
-  await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+export async function copyJson(payload: ExportPayload): Promise<boolean> {
+  return copyText(jsonExportBody(payload));
+}
+
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.setAttribute("readonly", "");
+    textArea.style.position = "fixed";
+    textArea.style.opacity = "0";
+    textArea.style.pointerEvents = "none";
+    document.body.append(textArea);
+    textArea.select();
+    textArea.setSelectionRange(0, textArea.value.length);
+    const copied = document.execCommand("copy");
+    textArea.remove();
+    return copied;
+  }
 }
 
 function sumCosts(results: TranscriptionResult[]): number {
